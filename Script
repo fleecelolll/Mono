@@ -11,11 +11,13 @@ local HttpService      = game:GetService("HttpService")
 local RS               = game:GetService("ReplicatedStorage")
 local TweenService     = game:GetService("TweenService")
 local VirtualUser      = game:FindService("VirtualUser")
+local GuiService       = game:GetService("GuiService")
 
 local LocalPlayer = Players.LocalPlayer
 local Camera      = workspace.CurrentCamera
 
 local mountTarget = (typeof(gethui)=="function" and gethui()) or game:GetService("CoreGui")
+pcall(function() if typeof(getgenv)=="function" and getgenv().MONO_Unload then getgenv().MONO_Unload() end end)
 for _,g in ipairs(mountTarget:GetChildren()) do if g.Name=="Obsidian" or g.Name=="MONO_ESP" or g.Name=="MONO_MINI" then pcall(function() g:Destroy() end) end end
 
 local repo="https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
@@ -32,7 +34,7 @@ local function create(class,props,children)
     return o
 end
 
-local flags={autoKill=false,autoCombat=false,aimbot=false,silentAim=false,triggerBot=false,showFov=false,
+local flags={autoKill=false,autoCombat=false,knifeWalls=false,gunWalls=false,aimbot=false,silentAim=false,triggerBot=false,showFov=false,
     fly=false,flySpeed=60,noclip=false,infJump=false,unlockCam=false,
     espBox=false,espFill=false,espNames=false,espRoleTags=false,espSkeleton=false,killFeed=false,coinEsp=false,
     fullbright=false,noFog=false,fpsBoost=false,autoCoins=false,murdererNotify=false,antiAfk=false,
@@ -41,6 +43,10 @@ local aimFov=120
 local conns={}
 local function bind(sig,fn) local c=sig:Connect(fn);table.insert(conns,c);return c end
 local function notify(msg,t) Library:Notify({Title="MONO",Description=msg,Time=t or 3}) end
+local function mousePos()
+    local m=UserInputService:GetMouseLocation(); local ins=GuiService:GetGuiInset()
+    return Vector2.new(m.X-ins.X, m.Y-ins.Y)
+end
 
 -- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 local TOOLTIPS={
@@ -161,24 +167,47 @@ local function findMurderer() for _,p in ipairs(Players:GetPlayers()) do if role
 local function findWeapon(n) local ch=LocalPlayer.Character; local bp=LocalPlayer:FindFirstChildOfClass("Backpack"); return (ch and ch:FindFirstChild(n)) or (bp and bp:FindFirstChild(n)) end
 local function equip(tool) local ch=LocalPlayer.Character; local hum=ch and ch:FindFirstChildOfClass("Humanoid"); if tool and hum and tool.Parent~=ch then pcall(function() hum:EquipTool(tool) end) end end
 
+local function aimPos(plr)
+    local ch=plr and plr.Character; local hrp=ch and getHRP(ch); if not hrp then return end
+    return (ch:FindFirstChild("UpperTorso") or ch:FindFirstChild("Torso") or hrp).Position
+end
+local KNIFE_PARTS={"HumanoidRootPart","UpperTorso","LowerTorso","Torso","Head"}
+local function knifeKill(ev,targetChar)
+    if not (ev and targetChar) then return end
+    local ht=ev:FindFirstChild("HandleTouched"); local ks=ev:FindFirstChild("KnifeStabbed")
+    if not ht then return end
+    for _,pn in ipairs(KNIFE_PARTS) do local part=targetChar:FindFirstChild(pn); if part then ht:FireServer(part) end end
+    if ks then ks:FireServer() end
+end
+local function throwKnifeAt(pos)
+    if not pos then return end
+    local knife=findWeapon("Knife"); if not knife then return end; equip(knife)
+    local ev=knife:FindFirstChild("Events"); local thrown=ev and ev:FindFirstChild("KnifeThrown"); if not thrown then return end
+    local myhrp=getHRP(LocalPlayer.Character)
+    local dir=myhrp and (pos-myhrp.Position); dir=(dir and dir.Magnitude>0.1) and dir.Unit or Vector3.new(0,0,-1)
+    thrown:FireServer(CFrame.new(pos-dir*2,pos),CFrame.new(pos))
+end
+local function shootGunAt(pos,throughWalls)
+    if not pos then return end
+    local gun=findWeapon("Gun"); if not gun then return end; equip(gun)
+    local shoot=gun:FindFirstChild("Shoot"); if not shoot then return end
+    local myhrp=getHRP(LocalPlayer.Character); if not myhrp then return end
+    local origin
+    if throughWalls then
+        local dir=(pos-myhrp.Position); dir=dir.Magnitude>0.1 and dir.Unit or myhrp.CFrame.LookVector
+        origin=CFrame.new(pos-dir*2,pos)
+    else
+        local att=myhrp:FindFirstChild("GunRaycastAttachment")
+        origin=(att and att.WorldCFrame) or CFrame.new(myhrp.Position,pos)
+    end
+    shoot:FireServer(origin,CFrame.new(pos))
+end
 local function aimAt(target,role)
-    local tch=target.Character; local hrp=getHRP(tch); if not hrp then return 0 end
-    local myhrp=getHRP(LocalPlayer.Character); if not myhrp then return 0 end
-    local tpos=(tch:FindFirstChild("UpperTorso") or tch:FindFirstChild("Torso") or hrp).Position
-    local dir=(tpos-myhrp.Position); dir=dir.Magnitude>0.1 and dir.Unit or myhrp.CFrame.LookVector
     if role=="Murderer" then
         local knife=findWeapon("Knife"); if not knife then return 0 end; equip(knife)
-        local ev=knife:FindFirstChild("Events"); local thrown=ev and ev:FindFirstChild("KnifeThrown")
-        if thrown then thrown:FireServer(CFrame.new(tpos-dir*1.5,tpos),CFrame.new(tpos)) end
-        return 0.35
+        knifeKill(knife:FindFirstChild("Events"),target.Character); return 0.1
     elseif role=="Sheriff" then
-        local gun=findWeapon("Gun"); if not gun then return 0 end; equip(gun)
-        local shoot=gun:FindFirstChild("Shoot")
-        if shoot then
-            local att=myhrp:FindFirstChild("GunRaycastAttachment")
-            shoot:FireServer((att and att.WorldCFrame) or CFrame.new(myhrp.Position,tpos),CFrame.new(tpos))
-        end
-        return 0.25
+        shootGunAt(aimPos(target),true); return 0.15
     end
     return 0
 end
@@ -191,20 +220,48 @@ end
 -- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 local function nearest(list) local hrp=getHRP(LocalPlayer.Character); if not hrp then return end
     local best,bd for _,p in ipairs(list) do local d=(getHRP(p.Character).Position-hrp.Position).Magnitude; if not bd or d<bd then bd,best=d,p end end return best end
+local function enemyRoleFor(myrole)
+    if myrole=="Murderer" then return "Sheriff" end
+    if myrole=="Sheriff"  then return "Murderer" end
+    return nil
+end
 local function fovTarget()
-    local center=Camera.ViewportSize/2; local best,bd
-    for _,p in ipairs(Players:GetPlayers()) do if p~=LocalPlayer and alive(p) then
-        local hrp=getHRP(p.Character); local v,on=Camera:WorldToViewportPoint(hrp.Position)
-        if on and v.Z>0 then local d=(Vector2.new(v.X,v.Y)-center).Magnitude; if d<=aimFov and (not bd or d<bd) then bd,best=d,p end end
+    local er=enemyRoleFor(myRole())
+    if not er then return nil end
+    local center=mousePos(); local best,bd
+    for _,p in ipairs(Players:GetPlayers()) do if p~=LocalPlayer and alive(p) and roleOf(p)==er then
+        local hrp=getHRP(p.Character)
+        if hrp then local v,on=Camera:WorldToViewportPoint(hrp.Position)
+            if on and v.Z>0 then local d=(Vector2.new(v.X,v.Y)-center).Magnitude; if d<=aimFov and (not bd or d<bd) then bd,best=d,p end end
+        end
     end end
     return best
 end
 
 task.spawn(function() while not Library.Unloaded do
-    if flags.autoKill then local list,role=enemies()
-        if role=="Murderer" or role=="Sheriff" then local tgt=nearest(list)
-            if tgt then task.wait(aimAt(tgt,role)) else task.wait(.12) end else task.wait(.2) end
-    else task.wait(.15) end
+    if flags.autoKill then
+        local list,role=enemies()
+        if role=="Murderer" then
+            local knife=findWeapon("Knife"); local ev=knife and knife:FindFirstChild("Events")
+            if ev then equip(knife); for _,tgt in ipairs(list) do knifeKill(ev,tgt.Character) end end
+            task.wait(0.1)
+        elseif role=="Sheriff" then
+            local tgt=nearest(list); if tgt then shootGunAt(aimPos(tgt),true) end
+            task.wait(0.12)
+        else task.wait(0.2) end
+    else task.wait(0.15) end
+end end)
+task.spawn(function() while not Library.Unloaded do
+    if flags.knifeWalls and myRole()=="Murderer" then
+        local tgt=nearest(enemies()); if tgt then throwKnifeAt(aimPos(tgt)) end
+        task.wait(0.35)
+    else task.wait(0.15) end
+end end)
+task.spawn(function() while not Library.Unloaded do
+    if flags.gunWalls and myRole()=="Sheriff" then
+        local m=findMurderer(); if m and alive(m) then shootGunAt(aimPos(m),true) end
+        task.wait(0.12)
+    else task.wait(0.15) end
 end end)
 task.spawn(function() local last=0 while not Library.Unloaded do
     if flags.triggerBot then local role=myRole()
@@ -217,7 +274,7 @@ local FovCircle=create("Frame",{AnchorPoint=Vector2.new(.5,.5),Position=UDim2.fr
     {create("UICorner",{CornerRadius=UDim.new(1,0)}),create("UIStroke",{Color=Color3.fromRGB(255,255,255),Thickness=1.5,Transparency=0.25})})
 bind(RunService.RenderStepped,function()
     if flags.showFov and (flags.aimbot or flags.silentAim or flags.triggerBot) then
-        FovCircle.Visible=true; FovCircle.Size=UDim2.fromOffset(aimFov*2,aimFov*2); FovCircle.Position=UDim2.fromOffset(Camera.ViewportSize.X/2,Camera.ViewportSize.Y/2)
+        FovCircle.Visible=true; FovCircle.Size=UDim2.fromOffset(aimFov*2,aimFov*2); local mp=mousePos(); FovCircle.Position=UDim2.fromOffset(mp.X,mp.Y)
     else FovCircle.Visible=false end
     if flags.aimbot and Options.AimKey and Options.AimKey:GetState() then
         local t=fovTarget()
@@ -225,21 +282,50 @@ bind(RunService.RenderStepped,function()
             if th then Camera.CFrame=Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position,th.Position),0.45) end end
     end
 end)
-pcall(function()
-    local oldNc
-    oldNc=hookmetamethod(game,"__namecall",function(self,...)
-        if flags.silentAim and not Library.Unloaded and not checkcaller() and getnamecallmethod()=="FireServer" then
-            local nm=self.Name
-            if nm=="Shoot" or nm=="KnifeThrown" then
-                local t=fovTarget()
-                if t then local hrp=getHRP(t.Character) if hrp then
-                    local a={...}; local tch=t.Character; local tpos=(tch:FindFirstChild("UpperTorso") or tch:FindFirstChild("Torso") or hrp).Position
-                    a[2]=CFrame.new(tpos); return oldNc(self,table.unpack(a))
-                end end
+local silentAimPos
+local function computeSilentTarget()
+    local er=enemyRoleFor(myRole())
+    if not er then return nil end
+    local center=mousePos()
+    local best,bd
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LocalPlayer and alive(p) and roleOf(p)==er then
+            local ch=p.Character; local hrp=getHRP(ch)
+            if hrp then
+                local sp,on=Camera:WorldToViewportPoint(hrp.Position)
+                if on and sp.Z>0 then
+                    local d=(Vector2.new(sp.X,sp.Y)-center).Magnitude
+                    if d<=aimFov and (not bd or d<bd) then
+                        bd=d
+                        best=(ch:FindFirstChild("UpperTorso") or ch:FindFirstChild("Torso") or hrp).Position
+                    end
+                end
             end
         end
-        return oldNc(self,...)
-    end)
+    end
+    return best
+end
+bind(RunService.Heartbeat,function()
+    silentAimPos = flags.silentAim and computeSilentTarget() or nil
+end)
+pcall(function()
+    local oldNamecall
+    oldNamecall=hookmetamethod(game,"__namecall",newcclosure(function(self,...)
+        if flags.silentAim and silentAimPos and not checkcaller() and getnamecallmethod()=="FireServer" then
+            local nm=self.Name
+            if nm=="Shoot" or nm=="KnifeThrown" then
+                local n=select("#",...)
+                if n>=2 then
+                    local a={...}
+                    if typeof(a[2])=="CFrame" then
+                        a[2]=CFrame.new(silentAimPos)
+                        return oldNamecall(self,table.unpack(a,1,n))
+                    end
+                end
+            end
+        end
+        return oldNamecall(self,...)
+    end))
 -- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 end)
 
@@ -530,6 +616,8 @@ local Tabs={
 do local g=Tabs.Combat:AddLeftGroupbox("Auto")
     g:AddToggle("AutoKill",{Text="Auto Kill",Callback=function(v) flags.autoKill=v end})
     g:AddToggle("AutoCombat",{Text="Auto-Combat on Role",Callback=function(v) flags.autoCombat=v end})
+    g:AddToggle("KnifeWalls",{Text="Throw Knife Through Walls",Callback=function(v) flags.knifeWalls=v end})
+    g:AddToggle("GunWalls",{Text="Shoot Gun Through Walls",Callback=function(v) flags.gunWalls=v end})
 end
 do local g=Tabs.Combat:AddRightGroupbox("Aim")
     g:AddToggle("Aimbot",{Text="Aimbot",Callback=function(v) flags.aimbot=v end})
@@ -719,6 +807,7 @@ ThemeManager:ApplyToTab(Tabs.UI)
 pcall(function() SaveManager:LoadAutoloadConfig() end)
 
 Library:OnUnload(function()
+    pcall(function() if typeof(getgenv)=="function" then getgenv().MONO_Unload=nil end end)
     for k,v in pairs(flags) do if type(v)=="boolean" then flags[k]=false end end
     stopFly(); setFullbright(false); setNoFog(false); setFPSBoost(false)
     setCamThruWalls(false); setUnlockCam(false)
@@ -732,3 +821,4 @@ Library:OnUnload(function()
     pcall(function() EspGui:Destroy() end)
     pcall(function() MiniGui:Destroy() end)
 end)
+pcall(function() if typeof(getgenv)=="function" then getgenv().MONO_Unload=function() pcall(function() Library:Unload() end) end end end)
