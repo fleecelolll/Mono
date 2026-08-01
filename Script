@@ -5,6 +5,10 @@
 --   * Chams - the old through-wall body glow, now its own separate toggle
 --   * Dropped Gun ESP & Distance - you can see the sheriff's dropped gun through walls
 --   * Auto Grab Dropped Gun - instantly teleports you to the dropped gun and teleports you back to your original spot
+--   * Instant Knife Throw - skips the wind up and the flight time, the knife lands the moment you press throw
+--   * Lookup tab - full player lookup with their Roblox join date, account age, friends,
+--     followers, plus their MM2 level, role, perk and how many Godlys and Ancients they own
+--   * View Full Inventory - opens MM2's own profile window for anyone in the server
 --
 -- CHANGED
 --   * Box ESP is now a real 2D box that tracks each player. What used to be
@@ -16,15 +20,26 @@
 --     find the player no matter who you picked
 --   * Server Hop works again - it used to always say there were no open
 --     servers
---   * Silent Aim is now Gun Silent Aim and only affects the gun
---   * Auto Collect Coins now stops on its own once your coin bag is full
+--   * Silent Aim is now Gun and Knife Silent Aim and works with both weapons
+--   * Trigger Bot is now Gun Trigger Bot and will not fire at people it cannot see
+--   * Auto Collect Coins now stops on its own once your coin bag is full, and no
+--     longer leaves you stuck inside a wall or the floor when it does
 --   * Auto Kill no longer switches itself on, and no longer silently stops
---     working for the rest of the round
+--     working for the rest of the round. It also leads moving targets now
+--     instead of only ever hitting people who stand still
 --   * Role detection now works even after you pick up the dropped gun
+--   * Murderer Notify is now a notification that stays on screen and counts the
+--     distance down as they get closer, instead of a one off popup
 --   * ESP no longer draws on top of the menu
 --   * Tooltips are hover based now, so they stop overlapping longer options
+--   * Search now looks through every tab instead of only the one you are on
+--   * UI Settings is far less cluttered - the theme and config sections only keep
+--     the parts people actually use
 --   * The menu hides itself better - every UI name is randomised each run
---   * Throw Knife Through Walls / Shoot Gun Through Walls works again
+--   * Throw Knife Through Walls / Shoot Gun Through Walls works again, and now
+--     needs you to actually aim at someone rather than snapping for you
+--   * Better mobile support - knife throwing and flying both work on touch now
+--   * General optimisation pass, the ESP and coin farm do a lot less work per frame
 --
 -- REMOVED
 --   * Auto-Combat on Role - Auto Kill already does exactly the same thing
@@ -85,15 +100,13 @@ if GENV then GENV.MONO_GUIS = TRACKED end
 local function trackGui(inst) table.insert(TRACKED, inst); protect(inst); return inst end
 
 local repo="https://raw.githubusercontent.com/deividcomsono/Obsidian/main/"
--- these three were fetched one after another, so startup paid three round trips
--- back to back. They do not depend on each other, so fetch them at the same time.
 local srcs={}
 do
     local paths={"Library.lua","addons/ThemeManager.lua","addons/SaveManager.lua"}
     local left=#paths
     for i,p in ipairs(paths) do
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
         task.spawn(function()
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
             local ok,res=pcall(function() return game:HttpGet(repo..p) end)
             srcs[i]=ok and res or nil
             left-=1
@@ -123,7 +136,7 @@ local function hideWindow()
     end)
 end
 
-local flags={autoKill=false,knifeWalls=false,gunWalls=false,gunEsp=false,gunEspDist=false,autoGun=false,aimbot=false,silentAim=false,triggerBot=false,showFov=false,
+local flags={autoKill=false,knifeWalls=false,gunWalls=false,instantKnife=false,gunEsp=false,gunEspDist=false,autoGun=false,aimbot=false,silentAim=false,triggerBot=false,showFov=false,
     fly=false,flySpeed=60,noclip=false,infJump=false,unlockCam=false,
     espBox=false,espChams=false,espFill=false,espNames=false,espRoleTags=false,espSkeleton=false,killFeed=false,coinEsp=false,
     fullbright=false,fpsBoost=false,autoCoins=false,murdererNotify=false,antiAfk=false,
@@ -131,6 +144,7 @@ local flags={autoKill=false,knifeWalls=false,gunWalls=false,gunEsp=false,gunEspD
 local COLLECT_SPEED=16
 local aimFov=120
 local flinging=false
+local instantFiredAt=-10
 local unstick
 local MiniBtnRef
 local conns={}
@@ -141,15 +155,14 @@ local function mousePos()
     return Vector2.new(m.X-ins.X, m.Y-ins.Y)
 end
 
-
 local MM2_PLACE=142823291
 local MM2_UNIVERSE=66654135
 local CONFIG_FOLDER="MONO_MM2"
 local hopFallbackPlace
 local function fetchServers(placeId,maxPages)
     local out,cursor={},nil
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     for _=1,(maxPages or 4) do
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
         local url="https://games.roblox.com/v1/games/"..placeId.."/servers/Public?sortOrder=Desc&limit=100"
         if cursor then url=url.."&cursor="..HttpService:UrlEncode(cursor) end
         local ok,res=pcall(function() return game:HttpGet(url) end)
@@ -162,9 +175,6 @@ local function fetchServers(placeId,maxPages)
     end
     return out
 end
--- Every public MM2 server reports 12/12, so requiring free space finds nothing. Those
--- counts are cached and slots open constantly, so prefer a server the list says has
--- room, otherwise just try a listed one, and let Roblox matchmake as the last resort.
 local function hopServers(placeId,excludeJob,fallbackTeleport)
     task.spawn(function()
         local all=fetchServers(placeId,4)
@@ -204,11 +214,11 @@ local function applySavedTheme()
             local name=readfile(p)
             if name and #name>0 then ThemeManager:ApplyTheme(name) end
         end
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     end)
 end
 
 if game.GameId~=MM2_UNIVERSE then
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     applySavedTheme()
     local W=Library:CreateWindow({Title="MONO",Footer="MM2 · Obsidian",Center=true,AutoShow=true,ShowCustomCursor=true})
     hideWindow()
@@ -222,8 +232,6 @@ if game.GameId~=MM2_UNIVERSE then
             {Id="Close",Title="Close",Variant="Secondary",Callback=function(d) pcall(function() d:Dismiss() end); Library:Unload() end},
         },
     })
-    -- this branch returns early, so it needs its own unload hook or re-executing in a
-    -- non-MM2 game would leave the previous window behind
     pcall(function() if GENV then GENV.MONO_Unload=function() pcall(function() Library:Unload() end) end end end)
     return
 end
@@ -242,11 +250,7 @@ local function charHasWeapon(ch,kind)
     end
     return false
 end
--- The round oracle is authoritative and live for every player, so it is checked first.
--- Weapon scanning only ever works while a tool is equipped, so it is the fallback.
 local CollectionService=game:GetService("CollectionService")
--- Weapon tools carry Weapon_Gun / Weapon_Knife tags (the game's own UI relies on
--- them) and stay visible whether equipped or sitting in a backpack.
 local function playerHasTagged(plr,tag)
     for _,t in ipairs(CollectionService:GetTagged(tag)) do
         local par=t.Parent
@@ -257,11 +261,7 @@ local function playerHasTagged(plr,tag)
     end
     return false
 end
--- Confirmed live: an innocent who picks up the dropped gun is still reported as
--- "Innocent" by the round oracle, so a held gun has to outrank it. The oracle still
--- wins for Murderer, otherwise the Fake Gun perk would read as a sheriff.
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
-local function roleOf(plr)
+local function computeRole(plr)
     local d=roundData(plr)
     local r=d and d.Role
     if r=="Murderer" then return "Murderer" end
@@ -271,11 +271,33 @@ local function roleOf(plr)
     if playerHasTagged(plr,"Weapon_Knife") or (ch and charHasWeapon(ch,"Knife")) then return "Murderer" end
     return r or "Innocent"
 end
-local function alive(plr) local d=roundData(plr); if d and d.Dead==true then return false end
-    local ch=plr.Character; local hum=ch and ch:FindFirstChildOfClass("Humanoid"); return ch and hum and hum.Health>0 and getHRP(ch) end
+local function computeAlive(plr)
+    local d=roundData(plr); if d and d.Dead==true then return false end
+    local ch=plr.Character; local hum=ch and ch:FindFirstChildOfClass("Humanoid")
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+    return ch and hum and hum.Health>0 and getHRP(ch)
+end
+local CACHE_TTL=0.05
+local roleCache,aliveCache,cacheStamp={},{},0
+local function sweepCaches()
+    local now=os.clock()
+    if now-cacheStamp>CACHE_TTL then
+        table.clear(roleCache); table.clear(aliveCache); cacheStamp=now
+    end
+end
+local function roleOf(plr)
+    sweepCaches()
+    local v=roleCache[plr]
+    if v==nil then v=computeRole(plr); roleCache[plr]=v end
+    return v
+end
+local function alive(plr)
+    sweepCaches()
+    local v=aliveCache[plr]
+    if v==nil then v=computeAlive(plr) or false; aliveCache[plr]=v end
+    return v
+end
 local function myRole() return roleOf(LocalPlayer) end
--- An innocent who picks up the dropped gun becomes "Hero", not "Sheriff". Both carry a
--- gun and both hunt the murderer, so every gun code path has to accept either.
 local function isGunRole(role) return role=="Sheriff" or role=="Hero" end
 local function isEnemyOf(myrole,role)
     if myrole=="Murderer" then return isGunRole(role) end
@@ -286,9 +308,20 @@ local function findMurderer() for _,p in ipairs(Players:GetPlayers()) do if role
 local function findWeapon(n) local ch=LocalPlayer.Character; local bp=LocalPlayer:FindFirstChildOfClass("Backpack"); return (ch and ch:FindFirstChild(n)) or (bp and bp:FindFirstChild(n)) end
 local function equip(tool) local ch=LocalPlayer.Character; local hum=ch and ch:FindFirstChildOfClass("Humanoid"); if tool and hum and tool.Parent~=ch then pcall(function() hum:EquipTool(tool) end) end end
 
-local function aimPos(plr)
+local Stats=game:GetService("Stats")
+local function netPing()
+    local ok,v=pcall(function() return Stats.Network.ServerStatsItem["Data Ping"]:GetValue()/1000 end)
+    if ok and type(v)=="number" and v>0 and v<1 then return v end
+    return 0.12
+end
+local PREDICT_MIN_SPEED=1
+local function aimPos(plr,noPredict)
     local ch=plr and plr.Character; local hrp=ch and getHRP(ch); if not hrp then return end
-    return (ch:FindFirstChild("UpperTorso") or ch:FindFirstChild("Torso") or hrp).Position
+    local base=(ch:FindFirstChild("UpperTorso") or ch:FindFirstChild("Torso") or hrp).Position
+    if noPredict then return base end
+    local vel=hrp.AssemblyLinearVelocity
+    if vel.Magnitude<PREDICT_MIN_SPEED then return base end
+    return base+vel*netPing()
 end
 local KNIFE_PARTS={"HumanoidRootPart","UpperTorso","LowerTorso","Torso","Head"}
 local function knifeKill(ev,targetChar)
@@ -297,6 +330,7 @@ local function knifeKill(ev,targetChar)
     if not ht then return end
     for _,pn in ipairs(KNIFE_PARTS) do local part=targetChar:FindFirstChild(pn); if part then ht:FireServer(part) end end
     if ks then ks:FireServer() end
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 end
 local function shootGunAt(pos,throughWalls)
     if not pos then return end
@@ -313,15 +347,25 @@ local function shootGunAt(pos,throughWalls)
     end
     shoot:FireServer(origin,CFrame.new(pos))
 end
-local function aimAt(target,role)
+local function aimAt(target,role,throughWalls)
     if role=="Murderer" then
         local knife=findWeapon("Knife"); if not knife then return 0 end; equip(knife)
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
         knifeKill(knife:FindFirstChild("Events"),target.Character); return 0.1
     elseif isGunRole(role) then
-        shootGunAt(aimPos(target),true); return 0.15
+        shootGunAt(aimPos(target),throughWalls==true); return 0.15
     end
     return 0
+end
+local losParams=RaycastParams.new()
+losParams.FilterType=Enum.RaycastFilterType.Exclude
+local function hasLineOfSight(ch)
+    local myCh=LocalPlayer.Character
+    local myHrp=getHRP(myCh); local tHrp=getHRP(ch)
+    if not (myHrp and tHrp) then return false end
+    losParams.FilterDescendantsInstances={myCh,ch}
+    local dir=tHrp.Position-myHrp.Position
+    if dir.Magnitude<0.1 then return true end
+    return workspace:Raycast(myHrp.Position,dir,losParams)==nil
 end
 local function enemies()
     local role=myRole(); local list={}
@@ -342,6 +386,7 @@ local function nearest(list)
     return best
 end
 local function fovTarget()
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     local mr=myRole()
     if not (mr=="Murderer" or isGunRole(mr)) then return nil end
     local center=mousePos(); local best,bd
@@ -354,7 +399,6 @@ local function fovTarget()
     return best
 end
 
--- Auto Kill. The murderer branch intentionally hits every target in one pass.
 task.spawn(function() while not Library.Unloaded do
   local okLoop,errLoop=pcall(function()
     if flags.autoKill then
@@ -372,15 +416,18 @@ task.spawn(function() while not Library.Unloaded do
             local tgt=nearest(list); if tgt and flags.autoKill then shootGunAt(aimPos(tgt),true) end
             task.wait(0.12)
         else task.wait(0.2) end
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     else task.wait(0.15) end
   end)
   if not okLoop then warn("[MONO] auto kill: "..tostring(errLoop)); task.wait(0.25) end
 end end)
 task.spawn(function() local last=0 while not Library.Unloaded do
     if flags.triggerBot then local role=myRole()
-        if role=="Murderer" or isGunRole(role) then local t=fovTarget()
-            if t and os.clock()-last>0.3 then last=os.clock(); aimAt(t,role) end end
+        if isGunRole(role) then local t=fovTarget()
+            local walls=flags.gunWalls
+            if t and os.clock()-last>0.3 and (walls or hasLineOfSight(t.Character)) then
+                last=os.clock(); aimAt(t,role,walls)
+            end
+        end
     end
     task.wait(0.05)
 end end)
@@ -395,16 +442,9 @@ bind(RunService.RenderStepped,function()
         if t then local th=t.Character:FindFirstChild("Head") or getHRP(t.Character)
             if th then Camera.CFrame=Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position,th.Position),0.45) end end
     end
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 end)
--- TEMP DIAGNOSTIC: counters so we can see whether the namecall hook is firing at all
-local MDBG={hookHits=0,fireServer=0,shoot=0,knifeThrown=0,entered=0,retargeted=0,originMoved=0,
-            lastWalls="?",lastRetarget="?",lastHrp="?"}
-if typeof(getgenv)=="function" then getgenv().MONO_DBG=MDBG end
 local silentAimPos
--- Closest enemy to the crosshair, ignoring line of sight entirely. Deliberately does
--- not use the game's raycast: WeaponService.GetMouseTargetCFrame stops at the first
--- opaque hit, so aiming at someone behind a wall returns the wall, which is why a
--- through-walls shot has to substitute the real target rather than only the muzzle.
 local function crosshairEnemyPos(radius)
     local mr=myRole()
     if not (mr=="Murderer" or isGunRole(mr)) then return nil end
@@ -427,43 +467,17 @@ local function crosshairEnemyPos(radius)
     end
     return best
 end
--- Silent aim is gun-only, so it only resolves a target while we hold a gun
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
--- (Sheriff, or a Hero who grabbed the dropped one).
-local function computeSilentTarget()
-    if not isGunRole(myRole()) then return nil end
-    return crosshairEnemyPos(aimFov)
-end
--- Mirrors WeaponService.GetMouseTargetCFrame exactly: raw mouse location, or the
--- viewport centre while MouseLock is on. The difference is we never raycast, so
--- geometry is ignored completely.
-local function aimRay()
-    local m=UserInputService:GetMouseLocation()
-    local x,y=m.X,m.Y
-    local ml=LocalPlayer.PlayerScripts and LocalPlayer.PlayerScripts:FindFirstChild("MouseLock")
-    if ml and ml:GetAttribute("Enabled")==true and UserInputService.PreferredInput~=Enum.PreferredInput.Gamepad then
-        local vs=Camera.ViewportSize
-        x,y=vs.X/2,vs.Y/2
-    end
-    return Camera:ViewportPointToRay(x,y)
-end
--- Aim point for the through-walls toggles. Snaps to anyone lying close to the ray so
--- you still get a clean body hit, otherwise returns the raw point 300 studs down the
--- ray (the range the game itself uses) so you can throw clean through the map at
--- nothing in particular.
-local WALL_SNAP_STUDS=9
-local function wallAimPos()
-    local ray=aimRay()
-    local origin,dir=ray.Origin,ray.Direction.Unit
+local function crosshairAnyPlayerPos(radius)
+    local center=mousePos()
     local best,bd
     for _,p in ipairs(Players:GetPlayers()) do
         if p~=LocalPlayer and alive(p) then
             local ch=p.Character; local hrp=getHRP(ch)
             if hrp then
-                local along=(hrp.Position-origin):Dot(dir)
-                if along>0 and along<=300 then
-                    local d=(hrp.Position-(origin+dir*along)).Magnitude
-                    if d<=WALL_SNAP_STUDS and (not bd or d<bd) then
+                local sp=Camera:WorldToViewportPoint(hrp.Position)
+                if sp.Z>0 then
+                    local d=(Vector2.new(sp.X,sp.Y)-center).Magnitude
+                    if d<=radius and (not bd or d<bd) then
                         bd=d
                         best=(ch:FindFirstChild("UpperTorso") or ch:FindFirstChild("Torso") or hrp).Position
                     end
@@ -471,50 +485,79 @@ local function wallAimPos()
             end
         end
     end
-    return best or (origin+dir*300)
+    return best
 end
-local wallTargetPos, myHrpPos
+local function computeSilentTarget()
+    local mr=myRole()
+    if mr=="Murderer" then return crosshairAnyPlayerPos(aimFov) end
+    if isGunRole(mr) then return crosshairEnemyPos(aimFov) end
+    return nil
+end
+local function aimRay()
+    local m=UserInputService:GetMouseLocation()
+    local x,y=m.X,m.Y
+    local ml=LocalPlayer.PlayerScripts and LocalPlayer.PlayerScripts:FindFirstChild("MouseLock")
+    if ml and ml:GetAttribute("Enabled")==true and UserInputService.PreferredInput~=Enum.PreferredInput.Gamepad then
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+        local vs=Camera.ViewportSize
+        x,y=vs.X/2,vs.Y/2
+    end
+    return Camera:ViewportPointToRay(x,y)
+end
+local function wallAimPos()
+    local ray=aimRay()
+    local origin,dir=ray.Origin,ray.Direction.Unit
+    local far=origin+dir*300
+    local chars={}
+    for _,p in ipairs(Players:GetPlayers()) do
+        if p~=LocalPlayer and alive(p) and p.Character then chars[#chars+1]=p.Character end
+    end
+    if #chars==0 then return nil,far end
+    local params=RaycastParams.new()
+    params.FilterType=Enum.RaycastFilterType.Include
+    params.FilterDescendantsInstances=chars
+    local hit=workspace:Raycast(origin,dir*300,params)
+    return (hit and hit.Position or nil),far
+end
+local wallSnapPos, wallFarPos, myHrpPos
 bind(RunService.Heartbeat,function()
     silentAimPos = flags.silentAim and computeSilentTarget() or nil
-    wallTargetPos = (flags.knifeWalls or flags.gunWalls) and wallAimPos() or nil
+    if flags.knifeWalls or flags.gunWalls then
+        wallSnapPos, wallFarPos = wallAimPos()
+    else
+        wallSnapPos, wallFarPos = nil, nil
+    end
     local h=getHRP(LocalPlayer.Character); myHrpPos = h and h.Position or nil
 end)
 pcall(function()
     local oldNamecall
     oldNamecall=hookmetamethod(game,"__namecall",newcclosure(function(self,...)
-        MDBG.hookHits=MDBG.hookHits+1
         if not checkcaller() and getnamecallmethod()=="FireServer" then
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
-            MDBG.fireServer=MDBG.fireServer+1
             local nm=self.Name
-            if nm=="Shoot" then MDBG.shoot=MDBG.shoot+1 end
-            if nm=="KnifeThrown" then MDBG.knifeThrown=MDBG.knifeThrown+1 end
             if nm=="Shoot" or nm=="KnifeThrown" then
                 local walls=(nm=="Shoot" and flags.gunWalls) or (nm=="KnifeThrown" and flags.knifeWalls)
-                local silent=(nm=="Shoot") and flags.silentAim and silentAimPos
-                local retarget=(silent and silentAimPos) or (walls and wallTargetPos) or nil
-                if retarget or walls then
+                if nm=="KnifeThrown" and flags.instantKnife and os.clock()-instantFiredAt<0.6 then
+                    return
+                end
+                local silent=flags.silentAim and silentAimPos
+                local wallTarget
+                if walls then
+                    if nm=="Shoot" then wallTarget=wallSnapPos
+                    else wallTarget=wallSnapPos or wallFarPos end
+                end
+                local retarget=(silent and silentAimPos) or wallTarget or nil
+                if retarget then
                     local n=select("#",...)
                     if n>=2 then
                         local a={...}
                         if typeof(a[2])=="CFrame" then
-                            -- arg2 is the aim point and always carries identity rotation,
-                            -- so swapping it is exactly what the game itself sends. The
-                            -- game raycast stops at the wall, handing us the wall rather
-                            -- than whoever is standing behind it.
-                            MDBG.entered=MDBG.entered+1
-                            MDBG.lastWalls=tostring(walls)
-                            MDBG.lastRetarget=tostring(retarget~=nil)
-                            MDBG.lastHrp=tostring(myHrpPos~=nil)
-                            if retarget then a[2]=CFrame.new(retarget); MDBG.retargeted=MDBG.retargeted+1 end
-                            -- Then put the muzzle right next to that target so the
-                            -- server raycast cannot clip geometry on the way there.
-                            if walls and myHrpPos and typeof(a[1])=="CFrame" then
+                            if retarget then a[2]=CFrame.new(retarget) end
+                            if walls and retarget and myHrpPos and typeof(a[1])=="CFrame" then
                                 local tp=a[2].Position
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
                                 local d=tp-myHrpPos
                                 d=(d.Magnitude>0.1) and d.Unit or Vector3.new(0,0,-1)
                                 a[1]=CFrame.new(tp-d*2,tp)
-                                MDBG.originMoved=MDBG.originMoved+1
                             end
                             return oldNamecall(self,table.unpack(a,1,n))
                         end
@@ -526,6 +569,75 @@ pcall(function()
     end))
 end)
 
+local WeaponService
+pcall(function() WeaponService=require(RS:WaitForChild("ClientServices"):WaitForChild("WeaponService")) end)
+local function gameAimCFrame()
+    if WeaponService then
+        local ok,cf=pcall(function() return WeaponService:GetMouseTargetCFrame() end)
+        if ok and typeof(cf)=="CFrame" then return cf end
+    end
+    local ray=aimRay()
+    return CFrame.new(ray.Origin+ray.Direction.Unit*300)
+end
+local function throwKnifeNow(ignoreCooldown)
+    local ch=LocalPlayer.Character
+    local knife=ch and ch:FindFirstChild("Knife")
+    if not knife then return false end
+    local ev=knife:FindFirstChild("Events")
+    local thrown=ev and ev:FindFirstChild("KnifeThrown")
+    if not thrown then return false end
+    if knife:GetAttribute("Disabled")==true then return false end
+    if not ignoreCooldown then
+        local cd=2*(tonumber(knife:GetAttribute("ThrowSpeed")) or 1)
+        if os.clock()-instantFiredAt<cd then return false end
+    end
+    local target=silentAimPos
+    if not target then
+        if flags.knifeWalls then
+            local snap,far=wallAimPos()
+            target=snap or far
+        else
+            target=gameAimCFrame().Position
+        end
+    end
+    if not target then return false end
+    local hrp=getHRP(ch); if not hrp then return false end
+    local d=target-hrp.Position
+    d=(d.Magnitude>0.1) and d.Unit or Vector3.new(0,0,-1)
+    instantFiredAt=os.clock()
+    thrown:FireServer(CFrame.new(target-d*2,target),CFrame.new(target))
+    return true
+end
+bind(UserInputService.InputBegan,function(input,gpe)
+    if gpe then return end
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+    if input.UserInputType~=Enum.UserInputType.MouseButton2 then return end
+    if flags.instantKnife then throwKnifeNow(false) end
+end)
+task.spawn(function()
+    local ok,act=pcall(function()
+        local ic=LocalPlayer:WaitForChild("PlayerGui",10):WaitForChild("InputContext",10)
+        return ic:WaitForChild("GameplayContext",10):WaitForChild("Throw",10)
+    end)
+    if ok and act then
+        pcall(function()
+            bind(act.Pressed,function()
+                if flags.instantKnife then throwKnifeNow(false) end
+            end)
+        end)
+    end
+end)
+
+local controlModule
+local function getControls()
+    if not controlModule then
+        pcall(function()
+            controlModule=require(LocalPlayer:WaitForChild("PlayerScripts"):WaitForChild("PlayerModule")):GetControls()
+        end)
+    end
+    return controlModule
+end
+local lastJumpAt=-10
 local flyBV,flyBG
 local function startFly() local ch=LocalPlayer.Character; local hrp=getHRP(ch); local hum=ch and ch:FindFirstChildOfClass("Humanoid")
     if not (hrp and hum) then return end; hum.PlatformStand=true
@@ -540,17 +652,21 @@ bind(RunService.RenderStepped,function()
     if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir+=look end
     if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir-=look end
     if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir+=right end
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir-=right end
     if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir+=Vector3.new(0,1,0) end
     if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir-=Vector3.new(0,1,0) end
+    if dir.Magnitude==0 then
+        local c=getControls()
+        local mv=c and c:GetMoveVector()
+        if mv and mv.Magnitude>0 then dir=dir+(look*(-mv.Z))+(right*mv.X) end
+    end
+    if os.clock()-lastJumpAt<0.25 then dir+=Vector3.new(0,1,0) end
     flyBV.Velocity=(dir.Magnitude>0 and dir.Unit or Vector3.zero)*flags.flySpeed; flyBG.CFrame=Camera.CFrame
 end)
--- GetDescendants on the character every frame was pure waste, the part list only
--- changes when the character or its accessories do. Cache it and refresh on change.
 local charParts,charPartsFor={},nil
 local function refreshCharParts(ch)
     charParts={}
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     if not ch then charPartsFor=nil return end
     for _,p in ipairs(ch:GetDescendants()) do
         if p:IsA("BasePart") then charParts[#charParts+1]=p end
@@ -576,7 +692,7 @@ local function uncollide(ch)
 end
 bind(RunService.Stepped,function() if not flags.noclip or flinging then return end local ch=LocalPlayer.Character; if not ch then return end
     uncollide(ch) end)
-bind(UserInputService.JumpRequest,function() if flags.infJump then local hum=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid"); if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
+bind(UserInputService.JumpRequest,function() lastJumpAt=os.clock() if flags.infJump then local hum=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid"); if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end end end)
 
 local origMaxZoom=LocalPlayer.CameraMaxZoomDistance
 local function setUnlockCam(on) pcall(function() LocalPlayer.CameraMaxZoomDistance=on and 10000 or origMaxZoom end) end
@@ -596,7 +712,6 @@ bind(RunService.Heartbeat,function()
     if flags.unlockCam and LocalPlayer.CameraMaxZoomDistance<9999 then setUnlockCam(true) end
     setCamThruWalls(flags.unlockCam and flags.noclip)
 end)
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 
 local espStore={}
 local function clearEsp(plr) local e=espStore[plr]; if not e then return end
@@ -604,12 +719,10 @@ local function clearEsp(plr) local e=espStore[plr]; if not e then return end
 local function espColor(role) if not flags.espRoleTags then return Color3.fromRGB(214,214,220) end
     if role=="Murderer" then return Color3.fromRGB(255,80,80) elseif isGunRole(role) then return Color3.fromRGB(90,150,255) else return Color3.fromRGB(95,225,125) end end
 local function tagOf(role) return role=="Murderer" and "[M]" or isGunRole(role) and "[S]" or "[I]" end
--- Drawing objects render above every Roblox GUI layer, so the box and skeleton ESP
--- would otherwise sit on top of the menu. Highlights and BillboardGuis are ordinary
--- instances and get covered normally, which is why only these two showed through.
 local guiRects={}
 local function refreshGuiRects()
     table.clear(guiRects)
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     local sg=Library.ScreenGui
     if not sg then return end
     local function add(o)
@@ -652,7 +765,6 @@ task.spawn(function() while not Library.Unloaded do
         if anyEsp and alive(plr) and ch and ch:FindFirstChildOfClass("Humanoid") and getHRP(ch) then
             local e=ensureEsp(plr); local role=roleOf(plr); local col=espColor(role); local tHRP=getHRP(ch)
             e.hl.Enabled=flags.espChams
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
             if flags.espChams then e.hl.Adornee=ch; e.hl.OutlineColor=col; e.hl.FillColor=col; e.hl.FillTransparency=flags.espFill and 0.6 or 1 end
             local parts={}
             if flags.espRoleTags then parts[#parts+1]=tagOf(role) end
@@ -664,10 +776,9 @@ task.spawn(function() while not Library.Unloaded do
     task.wait(0.12)
 end end)
 
--- Real 2D box ESP. Projects the character's world bounding box to screen space and
--- draws a rectangle around the tightest fit, so the box tracks pose and distance.
 local boxStore={}
 local function clearBox(plr)
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     local b=boxStore[plr]
     if b then for _,l in ipairs(b) do pcall(function() l:Remove() end) end; boxStore[plr]=nil end
 end
@@ -708,7 +819,6 @@ bind(RunService.RenderStepped,function()
         if next(boxStore) then for p in pairs(boxStore) do clearBox(p) end end
         return
     end
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     refreshGuiRects()
     for _,plr in ipairs(Players:GetPlayers()) do if plr~=LocalPlayer then
         local ch=plr.Character
@@ -724,6 +834,7 @@ bind(RunService.RenderStepped,function()
                     local l=b[i]
                     l.From,l.To,l.Color,l.Visible=seg[1],seg[2],col,true
                 end
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
             else
                 for _,l in ipairs(b) do l.Visible=false end
             end
@@ -738,10 +849,13 @@ local function clearSkel(plr) local s=skelStore[plr]; if s then for _,l in ipair
 local function ensureSkel(plr,ch)
     local bones=ch:FindFirstChild("UpperTorso") and R15Bones or R6Bones
     local s=skelStore[plr]
-    if s and s.bones==bones then return s end
+    if s and s.bones==bones and s.char==ch then return s end
     if s then clearSkel(plr) end
-    s={bones=bones,lines={}}
-    for i=1,#bones do local l=Drawing.new("Line"); l.Thickness=2; l.Transparency=1; l.Visible=false; s.lines[i]=l end
+    s={bones=bones,lines={},char=ch,parts={}}
+    for i=1,#bones do
+        local l=Drawing.new("Line"); l.Thickness=2; l.Transparency=1; l.Visible=false; s.lines[i]=l
+        s.parts[i]={ch:FindFirstChild(bones[i][1]),ch:FindFirstChild(bones[i][2])}
+    end
     skelStore[plr]=s; return s
 end
 bind(RunService.RenderStepped,function()
@@ -754,9 +868,10 @@ bind(RunService.RenderStepped,function()
         local ch=plr.Character
         if ch and ch:FindFirstChildOfClass("Humanoid") and alive(plr) then
             local s=ensureSkel(plr,ch); local col=espColor(roleOf(plr))
-            for i,pair in ipairs(s.bones) do local line=s.lines[i]
-                local a=ch:FindFirstChild(pair[1]); local b=ch:FindFirstChild(pair[2])
-                if line and a and b then
+            for i=1,#s.bones do local line=s.lines[i]
+                local pp=s.parts[i]
+                local a,b=pp[1],pp[2]
+                if line and a and b and a.Parent and b.Parent then
                     local va=Camera:WorldToViewportPoint(a.Position); local vb=Camera:WorldToViewportPoint(b.Position)
                     if va.Z>0 and vb.Z>0 and not pointBlocked(va.X,va.Y) and not pointBlocked(vb.X,vb.Y) then
                         line.From=Vector2.new(va.X,va.Y); line.To=Vector2.new(vb.X,vb.Y); line.Color=col; line.Visible=true
@@ -764,7 +879,6 @@ bind(RunService.RenderStepped,function()
                 elseif line then line.Visible=false end
             end
         else clearSkel(plr) end
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     end end
 end)
 bind(Players.PlayerRemoving,function(plr) clearEsp(plr); clearSkel(plr); clearBox(plr) end)
@@ -776,6 +890,7 @@ local function coinTaken(d) local c=d:GetAttribute("Collected"); return c==true 
 local function freshCoins() local out={}; local c=getCoinContainer()
     if c then for _,d in ipairs(c:GetChildren()) do if d:IsA("BasePart") and (d:GetAttribute("CoinID")~=nil or d.Name=="Coin_Server") and not coinTaken(d) then out[#out+1]=d end end end
     return out end
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 local coinCache={}
 task.spawn(function() while not Library.Unloaded do coinCache=freshCoins(); task.wait(0.5) end end)
 local coinEspStore={}
@@ -792,8 +907,6 @@ end end)
 
 local GameplayR=RS:WaitForChild("Remotes"):WaitForChild("Gameplay")
 
--- The server reports (bagName, collected, capacity) on every pickup. The game's own
--- CoinBagContainerScript treats capacity <= collected as a full bag, so we do too.
 local coinBagFull=false
 local CoinCollectedR=GameplayR:FindFirstChild("CoinCollected")
 local CoinsStartedR=GameplayR:FindFirstChild("CoinsStarted")
@@ -818,9 +931,6 @@ task.spawn(function()
                 local spd=COLLECT_SPEED
                 pcall(function() hum.WalkSpeed=spd end)
                 local coin,bd
-                -- coinCache is refreshed on its own timer, so reuse it instead of
-                -- rebuilding the whole list every single frame
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
                 for _,c in ipairs(coinCache) do
                     if c.Parent and not coinTaken(c) and not (farmBlack[c] and os.clock()<farmBlack[c]) then
                         local d=(c.Position-hrp.Position).Magnitude
@@ -836,6 +946,7 @@ task.spawn(function()
                         local dir=coin.Position-hrp.Position
                         if dir.Magnitude>2 then hrp.CFrame=CFrame.new(hrp.Position+dir.Unit*math.min(dir.Magnitude,spd*dt)); hrp.AssemblyLinearVelocity=Vector3.zero end
                         if typeof(firetouchinterest)=="function" then pcall(function() firetouchinterest(hrp,coin,0);firetouchinterest(hrp,coin,1) end) end
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
                     end
                 else target=nil; task.wait(0.1) end
             else task.wait(0.1) end
@@ -853,16 +964,10 @@ task.spawn(function()
     end
 end)
 
-
--- The dropped sheriff gun is NOT a Tool and carries no Weapon_Gun tag. Confirmed
--- live at Workspace.<Map>.GunDrop: an anchored 1x1x1 Part tagged "GunDrop", holding
--- a Fire effect (the green glow), a SpecialMesh and a TouchTransmitter. You pick it
--- up by walking into it, so touching the part is all that is needed.
 local function findDroppedGun()
     for _,p in ipairs(CollectionService:GetTagged("GunDrop")) do
         if p:IsA("BasePart") and p:IsDescendantOf(workspace) then return p end
     end
-    -- cheap fallback, two levels deep, in case the tag ever changes
     for _,d in ipairs(workspace:GetChildren()) do
         if d:IsA("BasePart") and d.Name=="GunDrop" then return d end
         if d:IsA("Model") then
@@ -876,7 +981,6 @@ task.spawn(function() while not Library.Unloaded do
     droppedGun=(flags.gunEsp or flags.autoGun) and findDroppedGun() or nil
     task.wait(0.3)
 end end)
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 local gunEspHL,gunEspBB
 task.spawn(function() while not Library.Unloaded do
     local h=flags.gunEsp and droppedGun or nil
@@ -898,6 +1002,7 @@ task.spawn(function() while not Library.Unloaded do
         if gunEspBB then gunEspBB.Enabled=false end
     end
     task.wait(0.25)
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 end end)
 local grabbing=false
 local function grabGunOnce()
@@ -932,7 +1037,6 @@ end end)
 local fbStore
 local function setFullbright(on)
     if on then fbStore=fbStore or {Lighting.Brightness,Lighting.ClockTime,Lighting.GlobalShadows,Lighting.Ambient}
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
         Lighting.Brightness=2;Lighting.ClockTime=14;Lighting.GlobalShadows=false;Lighting.Ambient=Color3.fromRGB(140,140,140)
     elseif fbStore then Lighting.Brightness,Lighting.ClockTime,Lighting.GlobalShadows,Lighting.Ambient=fbStore[1],fbStore[2],fbStore[3],fbStore[4]; fbStore=nil end end
 local fpsStore,fpsConn
@@ -954,6 +1058,7 @@ local function setFPSBoost(on)
             for _,e in ipairs(workspace:GetDescendants()) do if not (flags.fpsBoost and fpsStore) then return end fxKill(e,s); n+=1; if n%900==0 then RunService.Heartbeat:Wait() end end
         end)
     elseif fpsStore then
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
         local s=fpsStore.changed; Lighting.GlobalShadows=fpsStore.shadows
         local terrain=workspace:FindFirstChildOfClass("Terrain")
         if terrain and fpsStore.water then terrain.WaterWaveSize,terrain.WaterWaveSpeed,terrain.WaterReflectance=fpsStore.water[1],fpsStore.water[2],fpsStore.water[3] end
@@ -963,8 +1068,6 @@ local function setFPSBoost(on)
             n+=1; if n%900==0 then RunService.Heartbeat:Wait() end end end)
     end
 end
--- The farm runs with collisions off, so if it stops while you are inside a wall or
--- floor you get welded in place. Drop to the surface underneath before re-enabling.
 unstick=function(ch)
     if not ch then return end
     local hrp=getHRP(ch); if not hrp then return end
@@ -988,12 +1091,9 @@ unstick=function(ch)
 end
 local function tpTo(pos)
     local hrp=getHRP(LocalPlayer.Character); if not hrp then return end
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     hrp.CFrame=CFrame.new(pos+Vector3.new(0,3,0))
 end
 
--- Obsidian's Player dropdown stores the actual Player instance, not a name string,
--- so resolve defensively and accept either shape.
 local function resolvePlayer(v)
     if typeof(v)=="Instance" and v:IsA("Player") then return v end
     if type(v)=="table" then
@@ -1014,9 +1114,7 @@ local function resolvePlayer(v)
     return nil
 end
 
--- Velocity fling. The momentum transfer only happens if our root keeps a large
--- linear AND angular velocity while it overlaps the target, and if our parts can
--- actually collide, so noclip is suspended and CanCollide is forced on for the run.
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 local FLING_SECONDS=0.9
 local function flingPlayer(p)
     if flinging then return end
@@ -1037,15 +1135,10 @@ local function flingPlayer(p)
             local h=getHRP(LocalPlayer.Character); local t=p.Character and getHRP(p.Character)
             if not (h and t) then break end
             h.CFrame=t.CFrame
-            -- Spin only. The momentum that throws them comes from the spinning
-            -- contact, while a large linear velocity here mostly just rockets us,
-            -- which is what used to launch you off the map on the way back.
             h.AssemblyLinearVelocity=Vector3.zero
             h.AssemblyAngularVelocity=Vector3.new(0,9e4,0)
             RunService.Heartbeat:Wait()
         end
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
-        -- Hold still long enough for the solver to drop the leftover momentum.
         for _=1,14 do
             local h=getHRP(LocalPlayer.Character)
             if not h then break end
@@ -1058,7 +1151,6 @@ local function flingPlayer(p)
         pcall(function() hum.PlatformStand=false end)
         local h2=getHRP(LocalPlayer.Character)
         if h2 then h2.AssemblyLinearVelocity=Vector3.zero; h2.AssemblyAngularVelocity=Vector3.zero end
-        -- last safety net: if anything still threw us, put us back where we started
         for _=1,10 do
             RunService.Heartbeat:Wait()
             local h3=getHRP(LocalPlayer.Character)
@@ -1073,59 +1165,82 @@ local function flingPlayer(p)
     end)
 end
 
-local murdInRange=false
+local MURD_ALERT_RANGE=50
+local murdNotif=nil
+local murdLastShown=nil
+local function closeMurdNotif()
+    if murdNotif then
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+        pcall(function() murdNotif:Destroy() end)
+        murdNotif=nil
+        murdLastShown=nil
+    end
+end
 bind(RunService.Heartbeat,function()
-    if not flags.murdererNotify then murdInRange=false; return end
-    local hrp=getHRP(LocalPlayer.Character); local m=findMurderer()
-    if hrp and m and m~=LocalPlayer and alive(m) then
-        local d=(getHRP(m.Character).Position-hrp.Position).Magnitude
-        if d<35 and not murdInRange then murdInRange=true; notify("Murderer nearby · "..m.Name.."  ("..math.floor(d).."m)",3)
-        elseif d>50 then murdInRange=false end
-    else murdInRange=false end
+    if not flags.murdererNotify then closeMurdNotif() return end
+    local hrp=getHRP(LocalPlayer.Character)
+    local m=findMurderer()
+    local mh=(m and m~=LocalPlayer and alive(m)) and getHRP(m.Character) or nil
+    if not (hrp and mh) then closeMurdNotif() return end
+    local d=math.floor((mh.Position-hrp.Position).Magnitude)
+    if d>MURD_ALERT_RANGE then closeMurdNotif() return end
+    if not murdNotif then
+        local ok,res=pcall(function()
+            return Library:Notify({
+                Title="Murderer Nearby",
+                Description=m.Name.."   "..d.."m",
+                Persist=true,
+            })
+        end)
+        murdNotif=ok and res or nil
+        murdLastShown=d
+    elseif d~=murdLastShown then
+        murdLastShown=d
+        pcall(function() murdNotif:ChangeDescription(m.Name.."   "..d.."m") end)
+    end
 end)
 
 local GiveWeaponR=GameplayR:FindFirstChild("GiveWeapon")
 if GiveWeaponR then bind(GiveWeaponR.OnClientEvent,function(w) if w=="Knife" or w=="Gun" then notify("You are the "..(w=="Knife" and "MURDERER" or "SHERIFF").."!",3) end end) end
 
--- Kill feed. KillEvent only reaches the murderer and sheriff, so deaths are detected
--- by diffing the round oracle, which the server broadcasts to every player. KillEvent
--- is still used when present because it carries the kill type.
-local function feedNotify(name,killType,role)
-    local tag = role and (" ["..(role=="Murderer" and "M" or isGunRole(role) and "S" or "I").."]") or ""
-    Library:Notify({Title="Kill Feed",Description=tostring(name)..tag.."  ·  "..tostring(killType or "Eliminated"),Time=4})
-end
-local recentKillEvent={}
-local KillEventR=GameplayR:FindFirstChild("KillEvent")
-if KillEventR then bind(KillEventR.OnClientEvent,function(victim,_,_,killType)
-    if not victim then return end
-    local nm=tostring(victim)
-    recentKillEvent[nm]=os.clock()
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
-    if flags.killFeed then feedNotify(nm,killType) end
-end) end
-local lastDead={}
-local function scanDeaths()
-    if not (CRC and CRC.PlayerData) then return end
-    for name,d in pairs(CRC.PlayerData) do
-        local dead = (d.Dead==true)
-        local was = lastDead[name]
-        if was==false and dead then
-            local seen=recentKillEvent[name]
-            if flags.killFeed and not (seen and os.clock()-seen<2) then
-                feedNotify(name,nil,d.Role)
-            end
-        end
-        lastDead[name]=dead
+do
+    local function feedNotify(name,killType,role)
+        local tag = role and (" ["..(role=="Murderer" and "M" or isGunRole(role) and "S" or "I").."]") or ""
+        Library:Notify({Title="Kill Feed",Description=tostring(name)..tag.."  ·  "..tostring(killType or "Eliminated"),Time=4})
     end
+    local recentKillEvent={}
+    local KillEventR=GameplayR:FindFirstChild("KillEvent")
+    if KillEventR then bind(KillEventR.OnClientEvent,function(victim,_,_,killType)
+        if not victim then return end
+        local nm=tostring(victim)
+        recentKillEvent[nm]=os.clock()
+        if flags.killFeed then feedNotify(nm,killType) end
+    end) end
+    local lastDead={}
+    local function scanDeaths()
+        if not (CRC and CRC.PlayerData) then return end
+        for name,d in pairs(CRC.PlayerData) do
+            local dead = (d.Dead==true)
+            local was = lastDead[name]
+            if was==false and dead then
+                local seen=recentKillEvent[name]
+                if flags.killFeed and not (seen and os.clock()-seen<2) then
+                    feedNotify(name,nil,d.Role)
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+                end
+            end
+            lastDead[name]=dead
+        end
+    end
+    local PlayerDataChangedR=GameplayR:FindFirstChild("PlayerDataChanged")
+    if PlayerDataChangedR then bind(PlayerDataChangedR.OnClientEvent,function() task.defer(scanDeaths) end) end
+    local RoundStartR=GameplayR:FindFirstChild("RoundStart")
+    if RoundStartR then bind(RoundStartR.OnClientEvent,function()
+        lastDead={}; recentKillEvent={}; coinBagFull=false
+        task.defer(scanDeaths)
+    end) end
+    task.spawn(function() while not Library.Unloaded do scanDeaths(); task.wait(0.5) end end)
 end
-local PlayerDataChangedR=GameplayR:FindFirstChild("PlayerDataChanged")
-if PlayerDataChangedR then bind(PlayerDataChangedR.OnClientEvent,function() task.defer(scanDeaths) end) end
-local RoundStartR=GameplayR:FindFirstChild("RoundStart")
-if RoundStartR then bind(RoundStartR.OnClientEvent,function()
-    lastDead={}; recentKillEvent={}; coinBagFull=false
-    task.defer(scanDeaths)
-end) end
-task.spawn(function() while not Library.Unloaded do scanDeaths(); task.wait(0.5) end end)
 
 bind(TeleportService.TeleportInitFailed,function(_,_,_,_)
     local p=hopFallbackPlace
@@ -1136,13 +1251,14 @@ bind(TeleportService.TeleportInitFailed,function(_,_,_,_)
 end)
 if VirtualUser then bind(LocalPlayer.Idled,function() if flags.antiAfk then pcall(function() VirtualUser:CaptureController(); VirtualUser:ClickButton2(Vector2.new()) end) end end) end
 
-local Window=Library:CreateWindow({Title="MONO",Footer="MM2 · Obsidian",Center=true,AutoShow=true,Resizable=true,NotifySide="Right",ShowCustomCursor=true})
+local Window=Library:CreateWindow({Title="MONO",Footer="MM2 · Obsidian",Center=true,AutoShow=true,Resizable=true,NotifySide="Right",ShowCustomCursor=true,GlobalSearch=true})
 hideWindow()
 local Tabs={
     Combat=Window:AddTab("Combat","crosshair"),
     Player=Window:AddTab("Player","user"),
     Visuals=Window:AddTab("Visuals","eye"),
     Teleport=Window:AddTab("Teleport","map-pin"),
+    Lookup=Window:AddTab("Lookup","search"),
     Safety=Window:AddTab("Safety","shield"),
     UI=Window:AddTab("UI Settings","settings"),
 }
@@ -1151,12 +1267,12 @@ do local g=Tabs.Combat:AddLeftGroupbox("Auto")
     g:AddToggle("AutoKill",{Text="Auto Kill",Tooltip="Murderer kills everyone at once. Sheriff or Hero shoots the murderer.",Callback=function(v) flags.autoKill=v end})
     g:AddToggle("KnifeWalls",{Text="Knife Through Walls",Tooltip="Your thrown knives ignore geometry. Aim at a player or anywhere on the map. Does not throw for you.",Callback=function(v) flags.knifeWalls=v end})
     g:AddToggle("GunWalls",{Text="Gun Through Walls",Tooltip="Your shots ignore geometry. Aim at a player or anywhere on the map. Does not shoot for you.",Callback=function(v) flags.gunWalls=v end})
+    g:AddToggle("InstantKnife",{Text="Instant Knife Throw",Tooltip="Skips the wind up and the flight time, so the knife lands the instant you press throw. Walls still block it unless Knife Through Walls is on.",Callback=function(v) flags.instantKnife=v end})
 end
 do local g=Tabs.Combat:AddLeftGroupbox("Sheriff Gun")
     g:AddToggle("GunEsp",{Text="Dropped Gun ESP",Tooltip="Highlights the sheriff gun once it is lying on the ground.",Callback=function(v) flags.gunEsp=v end})
     g:AddToggle("GunEspDist",{Text="Gun ESP Distance",Tooltip="Adds a distance label to the dropped gun highlight.",Callback=function(v) flags.gunEspDist=v end})
     g:AddToggle("AutoGun",{Text="Auto Grab Gun",Tooltip="Grabs the dropped gun the moment it appears, then returns you.",Callback=function(v) flags.autoGun=v end})
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     g:AddButton({Text="Grab Gun Now",Tooltip="One-off grab of the dropped gun",Func=function()
         if findWeapon("Gun") then notify("You already have a gun"); return end
         if not (droppedGun or findDroppedGun()) then notify("No dropped gun on the map"); return end
@@ -1166,8 +1282,9 @@ end
 do local g=Tabs.Combat:AddRightGroupbox("Aim")
     g:AddToggle("Aimbot",{Text="Aimbot",Tooltip="Hold the keybind to snap your camera to the closest enemy in your FOV.",Callback=function(v) flags.aimbot=v end})
         :AddKeyPicker("AimKey",{Default="MB2",Mode="Hold",Text="Aimbot",NoUI=false})
-    g:AddToggle("SilentAim",{Text="Gun Silent Aim",Tooltip="Gun only. Redirects your shots to the closest enemy in your FOV.",Callback=function(v) flags.silentAim=v end})
-    g:AddToggle("TriggerBot",{Text="Trigger Bot",Tooltip="Automatically attacks any enemy that enters your FOV circle.",Callback=function(v) flags.triggerBot=v end})
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+    g:AddToggle("SilentAim",{Text="Gun and Knife Silent Aim",Tooltip="Redirects shots and knife throws to the closest target in your FOV. As sheriff it only targets the murderer.",Callback=function(v) flags.silentAim=v end})
+    g:AddToggle("TriggerBot",{Text="Gun Trigger Bot",Tooltip="Gun only. Automatically fires at the murderer when they enter your FOV circle and you can see them.",Callback=function(v) flags.triggerBot=v end})
     g:AddSlider("AimFov",{Text="Aim FOV",Tooltip="Radius in pixels around your cursor that counts as a valid target.",Default=120,Min=40,Max=400,Rounding=0,Callback=function(v) aimFov=v end})
     g:AddToggle("ShowFov",{Text="Show FOV Circle",Tooltip="Draws the aim radius. Only visible while an aim feature is on.",Callback=function(v) flags.showFov=v end})
 end
@@ -1212,7 +1329,6 @@ do local g=Tabs.Teleport:AddLeftGroupbox("Player Actions")
         if not p then notify("Pick a player first"); return end
         if not (p.Character and getHRP(p.Character)) then notify((p.DisplayName or p.Name).." is dead — nothing to fling"); return end
         notify("Flinging "..(p.DisplayName or p.Name))
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
         flingPlayer(p) end})
 end
 do local g=Tabs.Teleport:AddRightGroupbox("Coins")
@@ -1221,8 +1337,167 @@ do local g=Tabs.Teleport:AddRightGroupbox("Coins")
         local best,bd for _,c in ipairs(coinCache) do if not coinTaken(c) then local d=(c.Position-hrp.Position).Magnitude; if not bd or d<bd then bd,best=d,c end end end
         if best then tpTo(best.Position); notify("Teleported to coin") else notify("No coins on map") end end})
 end
+do
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+    local ItemDB
+    pcall(function() ItemDB=require(RS:WaitForChild("Database"):WaitForChild("Sync"):WaitForChild("Item")) end)
+    local ACC_LINES,MM2_LINES,INV_LINES=8,7,10
+    local accLabels,mm2Labels,invLabels={},{},{}
+    local lastLookupText=""
+    local function fill(labels,n,t)
+        for i=1,n do pcall(function() labels[i]:SetText(t[i] or "") end) end
+    end
+    local function clearLookup(msg)
+        fill(accLabels,ACC_LINES,{msg or ""})
+        fill(mm2Labels,MM2_LINES,{})
+        fill(invLabels,INV_LINES,{})
+    end
+    local function countKeys(t)
+        local c=0
+        if type(t)=="table" then for _ in pairs(t) do c=c+1 end end
+        return c
+    end
+    local function httpJson(url)
+        local ok,res=pcall(function() return game:HttpGet(url) end)
+        if not ok then return nil end
+        local ok2,d=pcall(function() return HttpService:JSONDecode(res) end)
+        return ok2 and d or nil
+    end
+    local ViewProfileModule,WindowService
+    pcall(function() ViewProfileModule=require(RS:WaitForChild("Modules"):WaitForChild("ViewProfileModule")) end)
+    pcall(function() WindowService=require(RS:WaitForChild("Modules"):WaitForChild("WindowService")) end)
+    local function findViewProfileFrame()
+        local pg=LocalPlayer:FindFirstChild("PlayerGui")
+        local main=pg and pg:FindFirstChild("MainGUI")
+        local gameF=main and main:FindFirstChild("Game")
+        return gameF and gameF:FindFirstChild("ViewProfile")
+    end
+    local function openProfileWindow(p)
+        if not (ViewProfileModule and WindowService) then notify("Profile viewer unavailable"); return end
+        local frame=findViewProfileFrame()
+        if not frame then notify("Profile window not loaded yet"); return end
+        notify("Opening "..p.Name.."'s profile...")
+        task.spawn(function()
+            local ok,err=pcall(function()
+                local data=RS.Remotes.Misc.GetPlayerProfile:InvokeServer(p.Name)
+                ViewProfileModule.GenerateProfile(frame,p.Name,data)
+                WindowService:ViewFrame("ViewProfile")
+            end)
+            if not ok then notify("Couldn't open profile: "..tostring(err):sub(1,60),5) end
+        end)
+    end
+    local lookupBusy=false
+    local function doLookup()
+        if lookupBusy then return end
+        local p=resolvePlayer(Options.LookupPlayer.Value)
+        if not p then notify("Pick a player first"); return end
+        lookupBusy=true
+        clearLookup("Looking up "..p.Name.."...")
+        task.spawn(function()
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+            local A,M,I={},{},{}
+
+            local info=httpJson("https://users.roblox.com/v1/users/"..p.UserId)
+            local joined="?"
+            if info and info.created then
+                local y,mo,d=tostring(info.created):match("^(%d+)-(%d+)-(%d+)")
+                joined=(d and (d.."/"..mo.."/"..y)) or tostring(info.created):sub(1,10)
+            end
+            local tags={}
+            if p.MembershipType==Enum.MembershipType.Premium then tags[#tags+1]="Premium" end
+            if info and info.hasVerifiedBadge then tags[#tags+1]="Verified" end
+            if info and info.isBanned then tags[#tags+1]="BANNED" end
+            local fc=httpJson("https://friends.roblox.com/v1/users/"..p.UserId.."/friends/count")
+            local fl=httpJson("https://friends.roblox.com/v1/users/"..p.UserId.."/followers/count")
+            local age=p.AccountAge or 0
+            A[1]="Name:  "..p.Name
+            A[2]="Display:  "..p.DisplayName
+            A[3]="User ID:  "..p.UserId
+            A[4]="Joined:  "..joined
+            A[5]="Age:  "..age.."d  ("..string.format("%.1f",age/365).."y)"
+            A[6]="Status:  "..(#tags>0 and table.concat(tags,", ") or "-")
+            A[7]="Friends:  "..tostring(fc and fc.count or "?")
+            A[8]="Followers:  "..tostring(fl and fl.count or "?")
+
+            local rd=roundData(p)
+            M[1]="Level:  "..tostring(p:GetAttribute("Level") or "?")
+            M[2]="Prestige:  "..tostring(p:GetAttribute("Prestige") or "?")
+            M[3]="XP:  "..tostring(p:GetAttribute("XP") or "?")
+            M[4]="Role:  "..roleOf(p)..((rd and rd.Dead) and "  (dead)" or "")
+            M[5]="Perk:  "..tostring((rd and rd.Perk) or p:GetAttribute("EquippedPerk") or "?")
+            M[6]="Knife:  "..tostring(p:GetAttribute("EquippedKnife") or "?")
+            M[7]="Gun:  "..tostring(p:GetAttribute("EquippedGun") or "?")
+
+            local okI,inv=pcall(function() return RS.Remotes.Extras.GetFullInventory:InvokeServer(p) end)
+            if okI and type(inv)=="table" then
+                local byR,total={},0
+                local owned=(type(inv.Weapons)=="table") and inv.Weapons.Owned or nil
+                if type(owned)=="table" then
+                    for id,cnt in pairs(owned) do
+                        local n=tonumber(cnt) or 1
+                        local it=ItemDB and ItemDB[id]
+                        local r=(it and it.Rarity) or "Other"
+                        byR[r]=(byR[r] or 0)+n
+                        total=total+n
+                    end
+                end
+                local rare=(byR.Ancient or 0)+(byR.Godly or 0)+(byR.Legendary or 0)+(byR.Unique or 0)
+                I[1]="Weapons:  "..total
+                I[2]="Ancient:  "..(byR.Ancient or 0)
+                I[3]="Godly:  "..(byR.Godly or 0)
+                I[4]="Legendary:  "..(byR.Legendary or 0)
+                I[5]="Unique:  "..(byR.Unique or 0)
+                I[6]="Other:  "..math.max(total-rare,0)
+                I[7]="Pets:  "..countKeys(inv.Pets)
+                I[8]="Effects:  "..countKeys(inv.Effects)
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+                I[9]="Trades:  "..countKeys(inv.TradeHistory)
+                I[10]="Bans:  "..countKeys(inv.Bans).."   ModLog:  "..countKeys(inv.ModLog)
+            else
+                I[1]="unavailable"
+            end
+
+            local flat={"ACCOUNT"}
+            for _,v in ipairs(A) do flat[#flat+1]=v end
+            flat[#flat+1]=""; flat[#flat+1]="MM2"
+            for _,v in ipairs(M) do flat[#flat+1]=v end
+            flat[#flat+1]=""; flat[#flat+1]="INVENTORY"
+            for _,v in ipairs(I) do flat[#flat+1]=v end
+            lastLookupText=table.concat(flat,"\n")
+
+            fill(accLabels,ACC_LINES,A)
+            fill(mm2Labels,MM2_LINES,M)
+            fill(invLabels,INV_LINES,I)
+            lookupBusy=false
+        end)
+    end
+    do local g=Tabs.Lookup:AddLeftGroupbox("Player Lookup")
+        g:AddDropdown("LookupPlayer",{SpecialType="Player",Text="Select Player",Tooltip="Anyone in the server, including yourself"})
+        g:AddButton({Text="Look Up Player",Tooltip="Reads Roblox account info and their full MM2 profile",Func=doLookup})
+        g:AddButton({Text="View Full Inventory",Tooltip="Opens MM2's own profile window for them, with every weapon, pet, effect and emote",Func=function()
+            local p=resolvePlayer(Options.LookupPlayer.Value)
+            if not p then notify("Pick a player first"); return end
+            openProfileWindow(p)
+        end})
+        g:AddButton({Text="Copy Results",Tooltip="Copies the last lookup to your clipboard",Func=function()
+            if #lastLookupText==0 then notify("Nothing to copy yet"); return end
+            if typeof(setclipboard)=="function" then setclipboard(lastLookupText); notify("Copied to clipboard")
+            else notify("Your executor has no setclipboard") end
+        end})
+    end
+    do local g=Tabs.Lookup:AddLeftGroupbox("Account")
+        for i=1,ACC_LINES do accLabels[i]=g:AddLabel("",true) end
+    end
+    do local g=Tabs.Lookup:AddRightGroupbox("MM2 Profile")
+        for i=1,MM2_LINES do mm2Labels[i]=g:AddLabel("",true) end
+    end
+    do local g=Tabs.Lookup:AddRightGroupbox("Inventory")
+        for i=1,INV_LINES do invLabels[i]=g:AddLabel("",true) end
+    end
+    clearLookup("Pick a player and press Look Up")
+end
 do local g=Tabs.Safety:AddLeftGroupbox("Awareness")
-    g:AddToggle("MurdNotify",{Text="Murderer Notify",Tooltip="Warns you once when the murderer comes within 35 studs.",Callback=function(v) flags.murdererNotify=v end})
+    g:AddToggle("MurdNotify",{Text="Murderer Notify",Tooltip="A notification that sticks around updating their distance while the murderer is within 50 studs.",Callback=function(v) flags.murdererNotify=v end})
     g:AddToggle("AntiAfk",{Text="Anti-AFK",Tooltip="Stops the 20 minute idle kick.",Callback=function(v) flags.antiAfk=v end})
 end
 do local g=Tabs.Safety:AddRightGroupbox("Server")
@@ -1231,6 +1506,7 @@ do local g=Tabs.Safety:AddRightGroupbox("Server")
 end
 local MenuGroup=Tabs.UI:AddLeftGroupbox("Menu")
 MenuGroup:AddButton({Text="Unload",Tooltip="Removes the menu and undoes every change it made",Func=function() Library:Unload() end})
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 MenuGroup:AddLabel("Menu bind"):AddKeyPicker("MenuKeybind",{Default="RightShift",NoUI=true,Text="Menu keybind"})
 Library.ToggleKeybind=Options.MenuKeybind
 local MiniGui=trackGui(create("ScreenGui",{Name=rnd(),ResetOnSpawn=false,IgnoreGuiInset=false,DisplayOrder=999,Parent=mountTarget}))
@@ -1268,7 +1544,6 @@ task.spawn(function() local shown=false while not Library.Unloaded do
         if show then MiniBtn.Visible=true; MiniScale.Scale=0.55
             pcall(function() TweenService:Create(MiniScale,TweenInfo.new(0.24,Enum.EasingStyle.Back,Enum.EasingDirection.Out),{Scale=1}):Play() end)
         else MiniBtn.Visible=false end
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
     end
     task.wait(0.06)
 end MiniBtn.Visible=false end)
@@ -1287,6 +1562,7 @@ do
         if Library.Unloaded then return origToggle(a,b) end
         local val; if type(a)=="boolean" then val=a elseif type(b)=="boolean" then val=b end
         local target=(val~=nil) and val or (not Library.Toggled)
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
         local mf=mainFrame(); local sc=mf and mf:FindFirstChildOfClass("UIScale")
         if not (mf and sc) then return origToggle(Library,target) end
         if target then
@@ -1324,15 +1600,82 @@ for _,opt in pairs(Options) do
     end
 end
 
--- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
 ThemeManager:SetLibrary(Library)
 SaveManager:SetLibrary(Library)
 SaveManager:IgnoreThemeSettings()
 SaveManager:SetIgnoreIndexes({"MenuKeybind"})
 ThemeManager:SetFolder(CONFIG_FOLDER)
 SaveManager:SetFolder(CONFIG_FOLDER.."/configs")
-SaveManager:BuildConfigSection(Tabs.UI)
-ThemeManager:ApplyToTab(Tabs.UI)
+
+do
+    local themeNames={}
+    for name in pairs(ThemeManager.BuiltInThemes) do themeNames[#themeNames+1]=name end
+    table.sort(themeNames,function(a,b)
+        return ThemeManager.BuiltInThemes[a][1]<ThemeManager.BuiltInThemes[b][1]
+    end)
+
+    local g=Tabs.UI:AddRightGroupbox("Theme")
+    g:AddDropdown("ThemePick",{Text="Theme",Values=themeNames,Default=1,AllowNull=false,
+        Tooltip="Switches the whole colour scheme"})
+    g:AddLabel("Accent colour"):AddColorPicker("AccentColor",{Default=Library.Scheme.AccentColor,
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+        Tooltip="The highlight colour used across the menu"})
+    g:AddButton({Text="Save As Default",Tooltip="Loads this theme automatically next time",Func=function()
+        local ok=ThemeManager:SaveDefault(Options.ThemePick.Value)
+        notify(ok and ("Default theme: "..tostring(Options.ThemePick.Value)) or "Couldn't save default theme")
+    end})
+    g:AddButton({Text="Clear Default",Tooltip="Goes back to the stock theme on next launch",Func=function()
+        pcall(function() ThemeManager:DeleteDefaultTheme() end)
+        notify("Default theme cleared")
+    end})
+
+    Options.ThemePick:OnChanged(function()
+        ThemeManager:ApplyTheme(Options.ThemePick.Value)
+    end)
+    Options.AccentColor:OnChanged(function()
+        ThemeManager:ThemeUpdate()
+    end)
+end
+
+do
+    local g=Tabs.UI:AddRightGroupbox("Configs")
+    g:AddInput("CfgName",{Text="Config Name",Default="",Finished=true,
+        Tooltip="Name to save the current settings under"})
+    g:AddDropdown("CfgList",{Text="Saved Configs",Values=SaveManager:RefreshConfigList(),
+        AllowNull=true,Tooltip="Your saved setting profiles"})
+    local function refreshCfgs()
+        pcall(function() Options.CfgList:SetValues(SaveManager:RefreshConfigList()) end)
+    end
+    g:AddButton({Text="Save",Tooltip="Writes every toggle and slider to this config",Func=function()
+        local n=Options.CfgName.Value
+        if not n or #n==0 then notify("Type a config name first"); return end
+        local ok,err=SaveManager:Save(n)
+        notify(ok and ("Saved config: "..n) or ("Save failed: "..tostring(err)))
+        refreshCfgs()
+    end})
+    g:AddButton({Text="Load",Tooltip="Applies the selected config",Func=function()
+        local n=Options.CfgList.Value
+        if not n or #tostring(n)==0 then notify("Pick a config first"); return end
+        local ok,err=SaveManager:Load(n)
+        notify(ok and ("Loaded config: "..tostring(n)) or ("Load failed: "..tostring(err)))
+    end})
+    g:AddButton({Text="Autoload Selected",Tooltip="Applies this config automatically on every launch",Func=function()
+        local n=Options.CfgList.Value
+        if not n or #tostring(n)==0 then notify("Pick a config first"); return end
+        SaveManager:SaveAutoloadConfig(n)
+        notify("Autoloading: "..tostring(n))
+    end})
+    g:AddButton({Text="Delete",Tooltip="Removes the selected config",Func=function()
+        local n=Options.CfgList.Value
+        if not n or #tostring(n)==0 then notify("Pick a config first"); return end
+        SaveManager:Delete(n)
+        notify("Deleted config: "..tostring(n))
+        refreshCfgs()
+    end})
+end
+
+-- Created by and originally uploaded by https://robloxscripts.com/user/Fleece
+pcall(function() ThemeManager:LoadDefault() end)
 pcall(function() SaveManager:LoadAutoloadConfig() end)
 
 Library:OnUnload(function()
@@ -1343,6 +1686,7 @@ Library:OnUnload(function()
     pcall(function() Camera.FieldOfView=70 end)
     local h=LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if h then pcall(function() h.PlatformStand=false;h.WalkSpeed=16;h.UseJumpPower=true;h.JumpPower=50 end) end
+    pcall(function() if murdNotif then murdNotif:Destroy() end end)
     for p in pairs(espStore) do clearEsp(p) end
     for p in pairs(skelStore) do clearSkel(p) end
     for p in pairs(boxStore) do clearBox(p) end
