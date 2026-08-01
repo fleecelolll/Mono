@@ -1332,7 +1332,7 @@ do local g=Tabs.Teleport:AddLeftGroupbox("Player Actions")
         flingPlayer(p) end})
 end
 do local g=Tabs.Teleport:AddRightGroupbox("Coins")
-    g:AddToggle("AutoCoins",{Text="Auto Collect Coins",Tooltip="Walks you coin to coin at normal speed. Stops on its own when your bag is full.",Callback=function(v) flags.autoCoins=v; if v then if coinBagFull then notify("Coin bag is already full") else notify("Auto-collect on") end end end})
+    g:AddToggle("AutoCoins",{Text="Auto Collect Coins",Tooltip="Flies you to coins at normal walkspeed. Stops on its own when your bag is full.",Callback=function(v) flags.autoCoins=v; if v then if coinBagFull then notify("Coin bag is already full") else notify("Auto-collect on") end end end})
     g:AddButton({Text="Teleport To Nearest Coin",Tooltip="One hop to the closest uncollected coin",Func=function() local hrp=getHRP(LocalPlayer.Character); if not hrp then return end
         local best,bd for _,c in ipairs(coinCache) do if not coinTaken(c) then local d=(c.Position-hrp.Position).Magnitude; if not bd or d<bd then bd,best=d,c end end end
         if best then tpTo(best.Position); notify("Teleported to coin") else notify("No coins on map") end end})
