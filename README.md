@@ -1,35 +1,93 @@
-## Changelog — 7/31/2026
+# MONO MM2 — Changelog
 
-### Added
-- **Fling Player** — pick anyone from the Teleport tab and launch them
-- **Chams** — the old through-wall body glow, now its own separate toggle
-- **Dropped Gun ESP & Distance** — you can see the sheriff's dropped gun through walls
-- **Auto Grab Dropped Gun** — instantly teleports you to the dropped gun and teleports you back to your original spot
-- **Instant Knife Throw** — skips the wind up and the flight time, the knife lands the moment you press throw
-- **Lookup tab** — full player lookup with their Roblox join date, account age, friends, followers, plus their MM2 level, role, perk and how many Godlys and Ancients they own
-- **View Full Inventory** — opens MM2's own profile window for anyone in the server
+**Release date:** August 8, 2026
 
-### Changed
-- **Box ESP** is now a real 2D box that tracks each player. What used to be called Box ESP was really chams, so it moved to the new **Chams** toggle and **Box Fill** became **Chams Fill**
-- **Kill Feed** now works in every role. It only ever fired for the murderer and sheriff before, so innocents never saw a kill feed
-- **Teleport To Player** works again, it used to always say it could not find the player no matter who you picked
-- **Server Hop** works again — it used to always say there were no open servers
-- **Silent Aim** is now **Gun and Knife Silent Aim** and works with both weapons
-- **Trigger Bot** is now **Gun Trigger Bot** and will not fire at people it cannot see
-- **Auto Collect Coins** now stops on its own once your coin bag is full, and no longer leaves you stuck inside a wall or the floor when it does
-- **Auto Kill** no longer switches itself on, and no longer silently stops working for the rest of the round. It also leads moving targets now instead of only ever hitting people who stand still
-- Role detection now works even after you pick up the dropped gun
-- **Murderer Notify** is now a notification that stays on screen and counts the distance down as they get closer, instead of a one off popup
-- ESP no longer draws on top of the menu
-- Tooltips are hover based now, so they stop overlapping longer options
-- Search now looks through every tab instead of only the one you are on
-- **UI Settings** is far less cluttered — the theme and config sections only keep the parts people actually use
-- The menu hides itself better — every UI name is randomised each run
-- **Throw Knife Through Walls / Shoot Gun Through Walls** works again, and now needs you to actually aim at someone rather than snapping for you
-- Better mobile support — knife throwing and flying both work on touch now
-- General optimisation pass, the ESP and coin farm do a lot less work per frame
+## Added
 
-### Removed
-- **Auto-Combat on Role** — Auto Kill already does exactly the same thing
-- **Collect Speed** — anything above the default just gets you kicked
-- **No Fog** — MM2 has no real fog to remove
+- **Fling All Players** — Flings everyone in the server one after another, then returns you to your original position.
+
+- **Auto Fling Murderer** — Automatically and repeatedly flings the Murderer whenever they are detected.
+
+- **Auto Fling Sheriff** — Automatically and repeatedly flings the Sheriff or Hero whenever they are detected.
+
+- **Trap ESP** — Shows invisible Murderer traps through walls.  
+  **Note:** This feature is currently marked as untested.
+
+- **Anti Trap** — Restores your movement after a Murderer trap slows you.  
+  **Note:** This feature is currently marked as untested.
+
+- **Anti Fling** — Limits extreme velocity and spin, removes unwanted body movers, and prevents other characters from colliding with you.
+
+- **Server Tab** — Displays live server information, including:
+  - Player count
+  - Region code
+  - Server type
+  - Server uptime
+  - Your ping
+  - Server FPS
+  - Place version
+  - Job ID
+
+- **Copy Job ID** — Copies the current server's Job ID to your clipboard.
+
+## Changed
+
+- **Fling Player** was completely rebuilt to:
+  - Follow moving targets more reliably
+  - Force the collision state needed for the fling
+  - Restore your character's physics afterward
+  - Hold your return position instead of launching or leaving you stuck
+
+- **Aim Prediction** now uses smoothed, ping-aware movement tracking with capped lead and jump prediction instead of relying on a single raw velocity sample.
+
+- **Murderer Aimbot** now considers every other living player instead of targeting only the Sheriff or Hero.
+
+- **Auto Kill** and **Gun Trigger Bot** now check for targets and fire more frequently.
+
+- **Sheriff and Hero Auto Kill** now respects the **Gun Through Walls** setting instead of always bypassing walls.
+
+- **Sheriff and Hero Auto Kill** now warns that gun hits against moving targets may still be unreliable.
+
+- **Instant Knife Throw** now automatically equips a stowed knife and uses a shorter cooldown based on `ThrowSpeed`.
+
+- **Dropped Gun ESP** and **Auto Grab Gun** now:
+  - React immediately when the dropped gun appears
+  - Refresh more quickly
+  - Avoid attempting to grab the gun while you are dead
+  - Avoid interfering with round-transition teleports
+
+- **Auto Collect Coins** now idles when:
+  - You are dead
+  - You are between rounds
+  - No nearby coins are available
+  - Your coin bag is full
+
+  It also restores your movement cleanly when it stops farming.
+
+- **Box ESP** and **Skeleton ESP** now work on executors without the `Drawing` API.
+
+- **Skeleton ESP** now skips off-screen players to reduce unnecessary work.
+
+- **ESP**, **Coin ESP**, and **Kill Feed** now refresh more quickly while improved tag and UI caching reduces repeated work.
+
+- **Silent Aim** now has a gun fallback for executors that cannot install the normal namecall hook.
+
+- The menu can now fall back to `PlayerGui` when executor GUI or `CoreGui` access is unavailable.
+
+- The main window now sizes itself according to the current viewport.
+
+- Notifications now stack upward from the bottom-right corner.
+
+- **Minimize To Square** is now enabled by default.
+
+- The default unsaved theme is now MONO's dark monochrome color scheme.
+
+- Combat controls are now organized into:
+  - Murderer features
+  - Shared aim features
+  - Sheriff features
+
+- **Rejoin** and **Server Hop** were moved from the Safety tab to the new Server tab.
+## Removed
+
+No user-facing features were removed in this update
