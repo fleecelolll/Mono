@@ -7,8 +7,6 @@
 - **Touch Controls** — On-screen buttons for **Fly Up**, **Fly Down**, and **Aimbot**, so those features are usable on mobile. Enables itself automatically on touch devices.
   - The pad is draggable, and each button only appears while its feature is turned on.
 
-- **Silent Aim Ignores FOV** — Targets the nearest enemy regardless of where your camera or cursor is pointing, instead of only targeting someone inside the Aim FOV circle.
-
 ## Changed
 
 - On touch devices, the custom cursor is now disabled and the interface scales up for larger tap targets.
