@@ -3,11 +3,13 @@
 -- ADDED
 --   * Touch Controls - on-screen buttons for Fly Up, Fly Down and Aimbot, so those work on
 --     mobile. Turns itself on automatically on touch devices
---   * Silent Aim Ignores FOV - targets the nearest enemy no matter where your camera is
---     pointing, instead of only someone inside the Aim FOV circle
+--
+-- CHANGED
+--   * On touch devices the custom cursor is disabled and the interface scales up for
+--     larger tap targets
 --
 -- REMOVED
---   * Sheriff and Hero Auto Kill 
+--   * Sheriff and Hero Auto Kill
 --   * Gun Silent Aim. Silent Aim is now knife only
 --   * Gun Trigger Bot
 --
@@ -23,7 +25,7 @@
 --   * Much less repeated work every frame, so the script runs smoother, especially on
 --     mobile and in full servers
 --
--- KNOWN BUGS
+-- KNOWN ISSUES
 --   * Fling not working properly
 --   * Anti fling still sometimes failing
 --   * Getting teleported back to the map and back to the lobby very quickly once a round ends
@@ -132,7 +134,7 @@ local function hideWindow()
     end)
 end
 
-local flags={autoKill=false,autoFlingMurderer=false,autoFlingSheriff=false,knifeWalls=false,gunWalls=false,instantKnife=false,gunEsp=false,gunEspDist=false,autoGun=false,aimbot=false,silentAim=false,showFov=false,ignoreFov=false,
+local flags={autoKill=false,autoFlingMurderer=false,autoFlingSheriff=false,knifeWalls=false,gunWalls=false,instantKnife=false,gunEsp=false,gunEspDist=false,autoGun=false,aimbot=false,silentAim=false,showFov=false,
     fly=false,flySpeed=60,noclip=false,infJump=false,unlockCam=false,
     espBox=false,espChams=false,espFill=false,espNames=false,espRoleTags=false,espSkeleton=false,killFeed=false,coinEsp=false,
     fullbright=false,fpsBoost=false,autoCoins=false,murdererNotify=false,antiAfk=false,
@@ -555,10 +557,6 @@ end
 local function computeSilentTarget()
     local mr=myRole()
     if mr~="Murderer" then return nil end
-    if flags.ignoreFov then
-        local t=nearest(enemies())
-        return t and Mono.aimPointFor(t) or nil
-    end
     return crosshairAnyPlayerPos(aimFov)
 end
 local function aimRay()
@@ -1778,7 +1776,6 @@ do local g=Tabs.Combat:AddLeftGroupbox("Murderer + Sheriff")
         :AddKeyPicker("AimKey",{Default="MB2",Mode="Hold",Text="Aimbot",NoUI=false})
     g:AddToggle("SilentAim",{Text="Knife Silent Aim",Tooltip="Redirects your knife throws to the closest player in your FOV. Murderer only. The gun version was removed because it would not hit moving targets reliably.",Callback=function(v) flags.silentAim=v end})
     g:AddSlider("AimFov",{Text="Aim FOV",Tooltip="Radius in pixels around your cursor that counts as a valid target.",Default=120,Min=40,Max=400,Rounding=0,Callback=function(v) aimFov=v end})
-    g:AddToggle("IgnoreFov",{Text="Silent Aim Ignores FOV",Tooltip="Silent aim normally only targets someone within the Aim FOV radius of your cursor, so it misses while you are moving and turning. This targets the nearest valid enemy regardless of where you are looking.",Default=false,Callback=function(v) flags.ignoreFov=v end})
     g:AddToggle("ShowFov",{Text="Show FOV Circle",Tooltip="Draws the aim radius. Only visible while an aim feature is on.",Callback=function(v) flags.showFov=v end})
 end
 do local g=Tabs.Combat:AddRightGroupbox("Sheriff")
