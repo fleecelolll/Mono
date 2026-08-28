@@ -58,11 +58,13 @@
 
 - Touch controls for **Fly** and **Aimbot** appear on their own on phones. There is no toggle for them any more.
 
+- The minimized menu is now a badge you can drag anywhere instead of being stuck to the side of the screen.
+
 - Configs are now saved in a folder called **Mono MM2**.
 
 ## Removed
 
-- **Full inventory viewer** - The **Players** tab shows the equipped knife, gun and perk instead. This may come back later.
+- **Parts of Player Lookup** - The **Players** tab shows account details and MM2 level, prestige, XP, role, perk and equipped knife and gun. What is gone is the join date, friends and followers counts, the weapon rarity counts (Godly, Ancient, Legendary, Unique), pets, effects and trade counts, and the full inventory viewer. This may come back later.
 
 - **Theme picker** - Replaced by the accent color, font, text size and opacity settings.
 
