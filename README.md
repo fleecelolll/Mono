@@ -1,46 +1,105 @@
-# MONO MM2 — Changelog
+# MONO MM2 - Changelog
 
-**Release date:** August 10, 2026
+**Release date:** August 27, 2026
 
 ## Added
 
-- **Touch Controls** — On-screen buttons for **Fly Up**, **Fly Down**, and **Aimbot**, so those features are usable on mobile. Enables itself automatically on touch devices.
-  - The pad is draggable, and each button only appears while its feature is turned on.
+- **New menu** - Mono has its own custom and unique menu now instead of one borrowed from somewhere else. The menu no longer downloads itself when you run the script, so it opens faster and cannot fail to load.
+  - Six tabs: **Modules**, **Players**, **Server**, **Configs**, **Settings** and **Credits**.
+
+- **Per-feature settings** - Each feature's options are now grouped with it behind the three dots on its row, along with a full explanation of what it does, instead of being spread across the page.
+
+- **Favorites** - Star a feature and it goes to the top of the list.
+
+- **Keybinds on everything** - Click the key chip on any row and press a key, right click to clear it. Before this only **Aimbot** and the menu itself could be bound.
+
+- **Guided tour** - A short walkthrough of the menu the first time you run the script. You can replay it any time from **Settings**.
+
+- **Fullscreen** - Expand the menu to fill the screen.
+
+- **Compact mode** - Smaller rows for more on screen at once. Sweep your mouse to the left edge to bring the category list back.
+
+- **Menu customization** - Accent color, font, text size, opacity, menu size, where the categories sit and where the search bar sits, plus a button to reset it all.
+
+- **Sheriff and Hero Auto Kill** - Back after being removed last update for not hitting moving targets. It works now.
+
+- **Gun Silent Aim** - Also back. **Silent Aim** now covers the gun as well as the knife.
+
+- **3D Box ESP** - A box drawn around the player in the world, so it turns with them.
+
+- **Tracers** - A line pointing to each player. You choose where it starts from.
+
+- **Footstep Trails** - Colored footprints behind every player. Red for the murderer, blue for the sheriff, green for innocents. Only you can see them.
+
+- **Avatar Icons** - Each player's headshot on their nametag.
+
+- **ESP Distance Limit** - Hide nametags and tracers past a distance you pick.
+
+- **Loop Fling** - Keeps flinging one player over and over. It waits for them to land first, so it will not follow them into the void.
+
+- **FPS Cap** - Limit your frame rate so your phone or laptop does not get hot. Turning it off puts you back on the limit you had before.
+
+- **Players tab** - Everyone in the server. Click a player to see their level, prestige, XP, perk and equipped knife and gun, each with a copy button.
+  - Mark someone as your target and the teleport and fling features will use them.
+
+- **Auto Save Toggles** - Off by default. Turn it on and your toggles save as you change them and come back next time.
+
+- **Compatibility check** - Tells you if your executor is missing something Mono needs, and which features are running in a weaker mode because of it.
 
 ## Changed
 
-- On touch devices, the custom cursor is now disabled and the interface scales up for larger tap targets.
+- **Server tab** - Expanded from eight rows to place and creator details, IDs, memory, gravity, clock time and graphics quality, with a copy button on every row instead of just one for the Job ID.
+
+- **Configs** now have their own tab, with each saved config listed and its own load, overwrite and delete buttons.
+
+- **Player Lookup** is now the **Players** tab.
+
+- **Chams Fill** is now a setting inside **Chams** instead of its own toggle.
+
+- Touch controls for **Fly** and **Aimbot** appear on their own on phones. There is no toggle for them any more.
+
+- Configs are now saved in a folder called **Mono MM2**.
 
 ## Removed
 
-- **Sheriff and Hero Auto Kill** — The gun could not reliably hit a moving target, so the gun branch was removed rather than shipped as something that only worked against a stationary player. **Auto Kill is now Murderer only.**
+- **Full inventory viewer** - The **Players** tab shows the equipped knife, gun and perk instead. This may come back later.
 
-- **Gun Silent Aim** — Removed for the same reason. The toggle is now **Knife Silent Aim**.
+- **Theme picker** - Replaced by the accent color, font, text size and opacity settings.
 
-- **Gun Trigger Bot** — Removed for the same reason.
+- **Autoload Selected** - Replaced by **Auto Save Toggles**, which saves and restores your setup on its own.
 
 ## Fixed
 
-- Fixed walking strangely until you jumped after **Auto Collect Coins** or **Noclip** turned off.
+- Fixed **Fling** not working. This was the main known issue last update.
 
-- Fixed the **Kill Feed** showing Sheriff deaths late.
+- Fixed **Anti Fling** failing. This was also a known issue last update.
 
-- Fixed unloading leaving features and menus behind instead of fully cleaning up.
+- Fixed **Anti AFK** throwing your knife. It used to right click to keep you awake, so if you walked away holding a weapon it would throw it for you.
 
-- Fixed **Anti Fling** only catching the most extreme flings.
+- Fixed **Box ESP** not fitting the player. The old box was always the same shape no matter what the player was doing.
 
-- Fixed the menu being stuck at nearly fullscreen on phones.
+- Fixed **Fullbright** making the map darker instead of brighter in some places.
+
+- Fixed **Fling All Players** skipping players who are dead but still have a body.
+
+- Fixed **Teleport To Player** saying it worked when you have no character.
+
+- Fixed ESP keeping a dead player's old role color instead of showing them as innocent.
 
 ## Optimized
 
-- **Box ESP** and **Skeleton ESP** now run as a single pass instead of two separate ones.
+- The menu is no longer downloaded when the script starts, so it loads faster.
 
-- Significantly less repeated work every frame, so the script runs smoother — especially on mobile and in full servers.
+- **Skeleton ESP** is much lighter. It was doing nearly twice the work it needed to.
+
+- Players behind you are skipped instead of being worked out and then hidden.
+
+- Coin scanning only runs while **Coin ESP** or **Auto Collect Coins** is on. It used to run five times a second no matter what.
+
+- **Anti Fling** does less work while still checking the same things.
+
+- The menu is quicker to open, which you will notice most on phones and weaker devices.
 
 ## Known Issues
 
-- Fling is not working properly.
-
-- Anti Fling still fails in some cases.
-
-- Getting teleported back to the map and then to the lobby very quickly once a round ends.
+- **Trap ESP** and **Anti Trap** are still unconfirmed. Murderer traps show up rarely enough that neither has been seen working in a real round yet.
