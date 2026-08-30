@@ -1,6 +1,5 @@
 -- This script is almost entirely made by AI so you may run into issues, please report issues in the Discord.
 -- Script and UI originally created by and uploaded by https://robloxscripts.com/user/Fleece
--- Changelog can be found at https://github.com/fleecelolll/Mono/blob/main/README.md
 -- Join the Discord with this link: https://discord.gg/NyYzt9XVd9
 
 local MONOUI_SOURCE = [==[
@@ -6393,9 +6392,10 @@ end
 
 local Menu = MonoUI.new({
     Title = "Mono", Version = "v1", Width = 860, Height = 560,
-    LogoUrl = "https://raw.githubusercontent.com/fleecelolll/Mono/main/MonoV1%20Logo.png",
+    LogoUrl = "https://raw.githubusercontent.com/fleecelolll/MonoMM2/main/Mono%20MM2%20Logo.png",
+    LogoCache = "Mono MM2/logo-mm2.png",
     LogoHeight = 46, LogoAspect = 3,
-    LogoMarkRect = { 12, 78, 215, 160 },
+    LogoMarkRect = { 19, 88, 200, 141 },
 })
 Window = Menu
 
